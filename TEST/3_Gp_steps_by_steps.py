@@ -112,9 +112,9 @@ def train(model, train_x, train_y, likelihood, mll, training_iter=200):
         # Zero gradients from previous iteration
         optimizer.zero_grad()
         # Output from model
-        output = model(X)
+        output = model(train_x)
         # Calc loss and backprop gradients
-        loss = -mll(output, y)
+        loss = -mll(output, train_y)
         loss.backward()
         print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
             i + 1, training_iter, loss.item(),
@@ -205,10 +205,24 @@ if __name__ == '__main__':
 
     res = 100  # 150 # grid resolution # 50
 
-    display_percentile_low = 50
-    display_percentile_high = 50
+    display_percentile_low = 10
+    display_percentile_high = 90
     training_iter = 200
     grid_count = 10
+
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    scatter_plot = ax.scatter([], [], [], c='blue', marker='o', s=10, alpha=0.5, label='3D Points')
+
+    ax.set_xlabel('X Axis')
+    ax.set_ylabel('Y Axis')
+    ax.set_zlabel('Z Axis')
+    ax.set_title('3D Scatter Plot of trainx (incremental)')
+    ax.legend()
+    plt.ion()
 
     # training by one time
     # train_X, train_y, min_data, max_data = pre_process_data(grasp_data)
@@ -256,11 +270,37 @@ if __name__ == '__main__':
 
         model, likelihood, mll = train(model, X, y, likelihood, mll, training_iter=200)
 
-        if batch_idx == 0 or batch_idx == num_batches - 1 or (batch_idx + 1) % 10 == 0:
-            xstar, xeva, yeva, zeva = res_build(res, min_data, max_data)
-            observed_pred, original_pred_low, original_pred_high = eval(model, buffer_grasp, likelihood)
-            prediction, uncertainty = test(model, xstar, likelihood)
-            draw(prediction, buffer_grasp, xeva, yeva, zeva, original_pred_low, original_pred_high)
+        # if batch_idx == 0 or batch_idx == num_batches - 1 or (batch_idx + 1) % 10 == 0:
+        #     xstar, xeva, yeva, zeva = res_build(res, min_data, max_data)
+        #     observed_pred, original_pred_low, original_pred_high = eval(model, buffer_grasp, likelihood)
+        #     prediction, uncertainty = test(model, xstar, likelihood)
+            # draw(prediction, buffer_grasp, xevad, yeva, zeva, original_pred_low, original_pred_high)
+
+        xstar, xeva, yeva, zeva = res_build(res, min_data, max_data)
+        observed_pred, original_pred_low, original_pred_high = eval(model, buffer_grasp, likelihood)
+        prediction, uncertainty = test(model, xstar, likelihood)
+        points_sampled = inside_sampled = outsite_sampled = None
+
+        mask = (prediction > original_pred_low) & (prediction < original_pred_high)
+        estimated_surface = xstar[mask]
+
+        xlim = [np.min(estimated_surface[:, 0]), np.max(estimated_surface[:, 0])]
+        ylim = [np.min(estimated_surface[:, 1]), np.max(estimated_surface[:, 1])]
+        zlim = [np.min(estimated_surface[:, 2]), np.max(estimated_surface[:, 2])]
+        padding = 0.05
+        ax.set_xlim(xlim[0] - padding, xlim[1] + padding)
+        ax.set_ylim(ylim[0] - padding, ylim[1] + padding)
+        ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
+
+        scatter_plot._offsets3d = (
+            estimated_surface[:, 0],
+            estimated_surface[:, 1],
+            estimated_surface[:, 2]
+        )
+        plt.pause(0.3)
+        plt.show()
+        print(f"surface low thres:{original_pred_low}")
+        print(f"surface high thres:{original_pred_high}")
 
     threshold = original_pred_high
 
@@ -269,13 +309,13 @@ if __name__ == '__main__':
 
     estimated_surface = xstar[mask]
 
-    fig = go.Figure(go.Scatter3d(
-        x=estimated_surface[:, 0],
-        y=estimated_surface[:, 1],
-        z=estimated_surface[:, 2],
-        mode='markers',
-        marker=dict(size=2, color='lightblue'),
-        name='Estimated Surface Point Cloud'
-    ))
-
-    fig.show()
+    # fig = go.Figure(go.Scatter3d(
+    #     x=estimated_surface[:, 0],
+    #     y=estimated_surface[:, 1],
+    #     z=estimated_surface[:, 2],
+    #     mode='markers',
+    #     marker=dict(size=2, color='lightblue'),
+    #     name='Estimated Surface Point Cloud'
+    # ))
+    #
+    # fig.show()

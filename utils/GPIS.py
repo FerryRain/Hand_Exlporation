@@ -74,8 +74,114 @@ class GPIS():
         self.buffer_explored_x = np.empty((0, 3))
         self.buffer_explored_y = np.empty((0))
         self.touched_x = np.empty((0, 3))
+        self.untouched_x = np.empty((0, 3))
+        plt.pause(0.5)
 
+    def init_model(self, init_x, init_y):
+        train_X = init_x
+        train_y = init_y
 
+        X = torch.FloatTensor(train_X).cuda()
+        y = torch.FloatTensor(train_y).cuda()
+        self.xstar = np.zeros((self.res ** 3, 3))
+
+        for j in range(self.res):
+            for i in range(self.res):
+                d = j * self.res ** 2  # Delta
+                axis_min = d + self.res * i
+                axis_max = self.res * (i + 1) + d
+
+                self.xstar[axis_min:axis_max, 0] = np.linspace(self.min_data[0], self.max_data[0], num=self.res)  # in X
+                self.xstar[axis_min:axis_max, 1] = self.min_data[1] + i * (
+                            (self.max_data[1] - self.min_data[1]) / self.res)  # in X
+                self.xstar[axis_min:axis_max, 2] = self.min_data[2] + (
+                            (j + 1) * ((self.max_data[2] - self.min_data[2]) / self.res))
+
+        tsize = self.res
+        self.xeva = np.reshape(self.xstar[:, 0], (tsize, tsize, tsize))
+        self.yeva = np.reshape(self.xstar[:, 1], (tsize, tsize, tsize))
+        self.zeva = np.reshape(self.xstar[:, 2], (tsize, tsize, tsize))
+
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood().cuda()
+        self.model = ExactGPModel(X, y, self.likelihood).cuda()
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        self.model.train()
+        self.likelihood.train()
+
+        print("init model")
+        print("--------------------------------------------------------")
+
+        optimizer = torch.optim.Adam([
+            {'params': self.model.parameters()},  # Includes GaussianLikelihood parameters
+        ], lr=0.1)
+
+        for i in range(self.training_iter):
+            # Zero gradients from previous iteration
+            optimizer.zero_grad()
+            # Output from model
+            output = self.model(X)
+            # Calc loss and backprop gradients
+            loss = -mll(output, y)
+            loss.backward()
+            print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+                i + 1, self.training_iter, loss.item(),
+                self.model.covar_module.base_kernel.lengthscale.item(),
+                self.model.likelihood.noise.item()
+            ))
+            optimizer.step()
+
+        self.model.eval()
+        self.likelihood.eval()
+
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            x = torch.FloatTensor(train_X).cuda()
+            observed_pred = self.likelihood(self.model(x))
+            original_prediction = observed_pred.mean.cpu().numpy()
+            # print(pred.shape)
+            self.original_confidence_lower, self.original_confidence_upper = observed_pred.confidence_region()
+
+        self.original_pred_low, self.original_pred_high = np.percentile(original_prediction,
+                                                                        [self.display_percentile_low,
+                                                                         self.display_percentile_high])
+
+        prediction_buf = []
+        uncertainty_buf = []
+        isplit = 0
+        step_length = 10000
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            # test_x = torch.linspace(0, 1, 51)
+            while isplit * step_length < self.xstar.shape[0]:
+                isplit += 1
+                split_min = step_length * (isplit - 1)
+                split_max = np.minimum(step_length * isplit, self.xstar.shape[0])
+
+                xstar_tensor = torch.FloatTensor(self.xstar[split_min:split_max, :]).cuda()
+                observed_pred = self.likelihood(self.model(xstar_tensor))
+                prediction = observed_pred.mean.cpu().numpy()
+                prediction_buf.append(prediction)
+                confidence_lower, confidence_upper = observed_pred.confidence_region()
+                confidence_lower = confidence_lower.cpu().numpy()
+                confidence_upper = confidence_upper.cpu().numpy()
+                uncertainty_buf.append(confidence_upper - confidence_lower)
+
+        self.prediction = np.hstack(prediction_buf)
+        self.uncertainty = np.hstack(uncertainty_buf)
+
+        threshold = self.original_pred_high
+
+        mask = self.prediction > threshold
+
+        self.estimated_surface = self.xstar[mask]
+
+        N = min(10000, self.estimated_surface.shape[0])
+        indices = np.random.choice(self.estimated_surface.shape[0], N, replace=False)
+        self.estimated_sampled = self.estimated_surface[indices]
+
+        self.origin_X = np.array(self.estimated_sampled)
+        self.origin_y = np.ones((self.estimated_sampled.shape[0],))
+
+        return self.estimated_surface
 
     def update(self, explored_new_x, explored_new_y):
         """
@@ -90,6 +196,7 @@ class GPIS():
         self.buffer_explored_x = np.vstack([self.buffer_explored_x, explored_new_x])
         self.buffer_explored_y = np.concatenate([self.buffer_explored_y, explored_new_y])
         self.touched_x = np.vstack([self.touched_x, explored_new_x[np.where(explored_new_y == 1)]])
+        self.untouched_x = np.vstack([self.untouched_x, explored_new_x[np.where(explored_new_y == 0)]])
 
         gridpcd = o3d.geometry.PointCloud()
         gridpcd.points = o3d.utility.Vector3dVector(self.origin_X)
@@ -97,7 +204,26 @@ class GPIS():
 
         index = []
 
-        for p in self.buffer_explored_x:
+        # for p in self.buffer_explored_x:
+        #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
+        #     for m in range(k):
+        #         index.append(idx[m])
+
+        for p in self.touched_x:
+            [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
+            for m in range(k):
+                index.append(idx[m])
+        # 为1的点周围都删掉 为0的点周围置为 0
+        mask = np.ones(len(self.origin_X), dtype=bool)
+        mask[index] = False
+        self.origin_X = np.vstack([self.origin_X[mask], self.touched_x])
+        self.origin_y = np.concatenate([self.origin_y[mask], np.ones((self.touched_x.shape[0],))])
+
+        gridpcd = o3d.geometry.PointCloud()
+        gridpcd.points = o3d.utility.Vector3dVector(self.origin_X)
+        self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
+        index = []
+        for p in self.untouched_x:
             [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
             for m in range(k):
                 index.append(idx[m])
@@ -107,8 +233,8 @@ class GPIS():
         mask[index] = False
         y_buf[mask] = self.origin_y[mask]
 
-        train_X = np.vstack([self.origin_X, self.buffer_explored_x])
-        train_y = np.hstack([y_buf, self.buffer_explored_y])
+        train_X = np.vstack([self.origin_X, self.untouched_x])
+        train_y = np.hstack([y_buf, np.zeros(self.touched_x.shape[0])])
 
         self.xstar = np.zeros((self.res ** 3, 3))
 
@@ -209,6 +335,7 @@ class GPIS():
         threshold = self.original_pred_high
 
         mask = self.prediction > threshold
+        # mask = self.original_pred_low < self.prediction < self.original_pred_high
 
         self.estimated_surface = self.xstar[mask]
 
@@ -263,7 +390,7 @@ class GPIS():
         self.ax.set_xlim(xlim[0] - padding, xlim[1] + padding)
         self.ax.set_ylim(ylim[0] - padding, ylim[1] + padding)
         self.ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
-        plt.pause(0.3)
+        plt.pause(0.5)
 
     def draw(self):
         """

@@ -1,8 +1,8 @@
 """
-@FileName：5_test_continue_square2bunny.py
+@FileName：8_Test_GPIS_continue_fiexd.py
 @Description：
 @Author：Ferry
-@Time：4/10/25 2:29 PM
+@Time：2025 4/24/25 1:05 AM
 @Copyright：©2024-2025 ShanghaiTech University-RIMLAB
 """
 import numpy as np
@@ -22,7 +22,7 @@ res = 100 # 150 # grid resolution # 50
 k_nearest=5
 display_percentile_low=10
 display_percentile_high=90
-training_iter = 200
+training_iter = 500
 grid_count = 10
 
 grasp_data = np.load("./contact_points_merged.npy")
@@ -81,17 +81,24 @@ ax.set_title('3D Scatter Plot of trainx (incremental)')
 ax.legend()
 plt.ion()
 plt.show()
+points_sampled = inside_sampled = None
 
 for batch_idx in range(num_batches):
     print(origin_X.shape)
     print(origin_y.shape)
 
+    # origin_X, origin_y = [], []
+    # for x in x_axis:
+    #     for y in y_axis:
+    #         for z in z_axis:
+    #             origin_X.append([x, y, z])
+    #             origin_y.append(1)
+    #
+    # origin_X = np.array(origin_X)
+    # origin_y = np.array(origin_y)
+
     ax.set_title(f'Batch {batch_idx + 1}/{num_batches}')  # 动态更新标题
-    scatter_plot._offsets3d = (
-        origin_X[:, 0],
-        origin_X[:, 1],
-        origin_X[:, 2]
-    )
+
     # 更新坐标轴范围以居中
     xlim = [np.min(origin_X[:, 0]), np.max(origin_X[:, 0])]
     ylim = [np.min(origin_X[:, 1]), np.max(origin_X[:, 1])]
@@ -102,32 +109,51 @@ for batch_idx in range(num_batches):
     ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
     plt.pause(0.3)
 
-    gridpcd = o3d.geometry.PointCloud()
-    gridpcd.points = o3d.utility.Vector3dVector(origin_X)
 
-    kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
     start_idx = batch_idx * batch_size
     end_idx = min((batch_idx + 1) * batch_size, len(grasp_data))
     current_batch = grasp_data[start_idx:end_idx]
     buffer_grasp = np.vstack([buffer_grasp, current_batch])
     batch_idx += 1
-    fone = np.ones((buffer_grasp.shape[0],))
+    fone = np.zeros((buffer_grasp.shape[0],))
     print("buffer_grasp.shape:", buffer_grasp.shape)
 
+
+    if inside_sampled is not None:
+        index = []
+        gridpcd = o3d.geometry.PointCloud()
+        gridpcd.points = o3d.utility.Vector3dVector(origin_X)
+        kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
+
+        for p in inside_sampled:
+            [k, idx, dis_sqr] = kdtree_gridpcd.search_knn_vector_3d(p, k_nearest)
+            for m in range(k):
+                index.append(idx[m])
+
+        origin_y[index] = -1
+
     index = []
+    gridpcd = o3d.geometry.PointCloud()
+    gridpcd.points = o3d.utility.Vector3dVector(origin_X)
+    kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
+    if points_sampled is not None:
+        for p in np.vstack([points_sampled, buffer_grasp]):
+            [k, idx, dis_sqr] = kdtree_gridpcd.search_knn_vector_3d(p, k_nearest)
+            for m in range(k):
+                index.append(idx[m])
+    else:
+        for p in buffer_grasp:
+            [k, idx, dis_sqr] = kdtree_gridpcd.search_knn_vector_3d(p, k_nearest)
+            for m in range(k):
+                index.append(idx[m])
 
-    for p in buffer_grasp:
-        [k, idx, dis_sqr] = kdtree_gridpcd.search_knn_vector_3d(p, k_nearest)
-        for m in range(k):
-            index.append(idx[m])
-
-    y_buf = np.zeros_like(origin_y)
     mask = np.ones(len(origin_X), dtype=bool)
     mask[index] = False
-    y_buf[mask] = origin_y[mask]
+    train_X = origin_X[mask]
+    train_y = origin_y[mask]
 
-    train_X = np.vstack([origin_X, buffer_grasp])
-    train_y = np.hstack([y_buf, fone])
+    train_X = np.vstack([train_X, buffer_grasp])
+    train_y = np.hstack([train_y, fone])
 
     xstar = np.zeros((res ** 3, 3))
 
@@ -181,7 +207,10 @@ for batch_idx in range(num_batches):
     likelihood.eval()
 
     with torch.no_grad(), gpytorch.settings.fast_pred_var():
-        x = torch.FloatTensor(buffer_grasp).cuda()
+        if points_sampled is not None:
+            x = torch.FloatTensor(np.vstack([points_sampled, buffer_grasp])).cuda()
+        else:
+            x = torch.FloatTensor(buffer_grasp).cuda()
         observed_pred = likelihood(model(x))
         original_prediction = observed_pred.mean.cpu().numpy()
         # print(pred.shape)
@@ -220,14 +249,25 @@ for batch_idx in range(num_batches):
 
     mask = (prediction > original_pred_low) & (prediction < original_pred_high)
 
-    estimated_surface = xstar[mask]
+    mask_out = (prediction > original_pred_low) & (prediction < original_pred_high)
 
-    N = 10000
+    estimated_surface = xstar[mask]
+    inside_point = xstar[mask_out]
+
+    N = min(1000, estimated_surface.shape[0])
     indices = np.random.choice(estimated_surface.shape[0], N, replace=False)
     points_sampled = estimated_surface[indices]
 
-    origin_X = np.array(points_sampled)
-    origin_y = np.ones((points_sampled.shape[0],))
+    indices = np.random.choice(inside_point.shape[0], N, replace=False)
+    inside_sampled = inside_point[indices]
+
+    scatter_plot._offsets3d = (
+        estimated_surface[:, 0],
+        estimated_surface[:, 1],
+        estimated_surface[:, 2]
+    )
+    # origin_X = np.array(points_sampled)
+    # origin_y = np.ones((points_sampled.shape[0],))
 
 plt.ioff()  # 关闭交互模式
 plt.show()
