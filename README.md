@@ -23,7 +23,7 @@ Hand_Exploration/
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/yourusername/Hand_Exploration.git
+   git clone https://github.com/FerryRain/Hand_Exlporation.git
    cd Hand_Exploration
    ```
 
@@ -70,49 +70,17 @@ Hand_Exploration/
 - **TEST/**
   - Reserved for test scripts and experimental trials.
 
-
-
-
-
-
-
-
-
-
-## Requirements
-
-- Python 3.8+
-- PyTorch
-- Open3D
-- NumPy
-- Matplotlib (optional, for visualization)
-
-You can install the required packages via:
-
-```bash
-pip install torch open3d numpy matplotlib
-```
-
 ## Getting Started
 
-1. Clone the repository:
+1. Run the simple exploration demo:
 
    ```bash
-   git clone https://github.com/yourusername/Hand_Exploration.git
-   cd Hand_Exploration
+   conda activate hand_exploration
    ```
 
-2. (Optional) Create a virtual environment:
-
    ```bash
-   python -m venv venv
-   source venv/bin/activate
-   ```
-
-3. Run an environment script, for example:
-
-   ```bash
-   python Env/Exploration_env_stage2.py
+   cd Env
+   python Exploration_env_stage2.py
    ```
 
 
