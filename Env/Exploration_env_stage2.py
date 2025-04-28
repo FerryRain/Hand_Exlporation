@@ -106,7 +106,11 @@ def get_grasp_status(count):
     else:
         return False
 
-
+"""
+-------------------------------
+# Init origin X and Y positions
+-------------------------------
+"""
 def generate_init_origin_Xy(temp_min, temp_max, grid_count):
     min_data = temp_min - (
             temp_max - temp_min) * 0.2
@@ -180,113 +184,12 @@ def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
     return torch.stack([x, y, z, w])
 
 
-def sample_hand_pose_with_custom_local_palm(radius=0.5, device='cuda'):
-    # 1. 默认姿态
-    q_default = torch.tensor([0.257551, 0.283045, 0.683330, -0.621782], device=device)
 
-    # 2. 局部手心方向（在手坐标系下）
-    hand_palm_dir_local = torch.tensor([-torch.sqrt(torch.tensor(2 / 2)), torch.sqrt(torch.tensor(2 / 2)), 0],
-                                       device=device)
-    hand_palm_dir_local = hand_palm_dir_local / hand_palm_dir_local.norm()
-
-    # 3. 通过 q_default 把局部方向变换到世界坐标系下
-    palm_dir_world = quat_rotate(q_default, hand_palm_dir_local)
-
-    # 4. 随机采样球面上的一个点作为手的位置
-    point = torch.randn(3, device=device)
-    point = point / point.norm()
-    position = point * radius
-
-    # 5. 构造目标方向（从位置指向球心）
-    target_dir = -point  # 因为球心在原点
-
-    # 6. 计算对齐旋转，使 palm_dir_world 旋转到 target_dir
-    q_align = quat_from_two_vectors(palm_dir_world, target_dir)
-
-    # 7. 最终姿态为：先应用 q_default，再应用 q_align
-    q_new = quat_mul(q_align, q_default)
-
-    return position, q_new
-
-
-def generate_next_exp_points(num_points=1, radius=0.4, center=None, device='cuda'):
-    if center is None:
-        center = torch.tensor([0.0, 0.0, -1.0], device=device)
-
-    # 1. Sample positions on the sphere surface
-    vecs = torch.randn((num_points, 3), device=device)
-    vecs = vecs / vecs.norm(dim=1, keepdim=True)
-    positions = center[None, :] + radius * vecs  # (B, 3)
-
-    # 2. z_axis is desired direction: from hand to sphere center
-    z_axes = center[None, :] - positions
-    z_axes = torch.nn.functional.normalize(z_axes, dim=1)
-
-    # 3. Construct quaternion so that local z_hand = +Z maps to target z_axes
-    # Default rotation: z_local = [0, 0, 1]
-    local_z = torch.tensor([0, 0, 1], device=device, dtype=torch.float).expand(num_points, 3)
-    quats = quat_from_two_vectors(local_z, z_axes)
-
-    return positions, quats
-
-
-def sample_point_from_surface(surface: np.ndarray):
-    idx = np.random.randint(len(surface))
-    point = surface[idx]  # (3,)
-    return torch.tensor(point, dtype=torch.float32, device='cuda'), idx
-
-
-from sklearn.neighbors import NearestNeighbors
-
-
-def estimate_normal(surface: np.ndarray, index: int, k=20):
-    nbrs = NearestNeighbors(n_neighbors=k).fit(surface)
-    _, indices = nbrs.kneighbors([surface[index]])
-
-    neighbors = surface[indices[0]]
-    pca = np.cov(neighbors.T)
-    _, _, vh = np.linalg.svd(pca)
-    normal = vh[-1]  # 法向量是最小特征值对应的方向
-    return torch.tensor(normal, dtype=torch.float32, device='cuda')
-
-
-def generate_hand_pose_outside_surface(
-        surface: np.ndarray,
-        q_default: torch.Tensor,
-        hand_palm_dir_local: torch.Tensor,
-        offset: float = 0.05,
-        device: str = 'cuda'
-):
-    # 1. 采样表面点
-    idx = np.random.randint(len(surface))
-    p = surface[idx]
-    p_torch = torch.tensor(p, dtype=torch.float32, device=device)
-
-    # 2. 估算法向量（局部邻域 PCA）
-    from sklearn.neighbors import NearestNeighbors
-    nbrs = NearestNeighbors(n_neighbors=20).fit(surface)
-    _, indices = nbrs.kneighbors([p])
-    neighbors = surface[indices[0]]
-    cov = np.cov(neighbors.T)
-    _, _, vh = np.linalg.svd(cov)
-    n = vh[-1]  # 法向量（最小主成分方向）
-    n = torch.tensor(n, dtype=torch.float32, device=device)
-
-    # 3. 生成手的位置（往外移动）
-    position = p_torch - offset * n  # 法向量反方向
-
-    # 4. 当前手心朝向（世界坐标下）
-    palm_dir_world = quat_rotate(q_default, hand_palm_dir_local)
-
-    # 5. 构造旋转对齐
-    q_align = quat_from_two_vectors(palm_dir_world, n)
-
-    # 6. 新四元数
-    q_new = quat_mul(q_align, q_default)
-
-    return position, q_new
-
-
+"""
+--------------
+# move to func
+--------------
+"""
 def move_to(robot, controller, pos, quat):
     controller.reset(torch.cat((pos, quat), dim=-1).reshape(-1, 7), [0])
     force, torques = controller.step(robot.data.root_state_w)
@@ -304,27 +207,11 @@ def move_to(robot, controller, pos, quat):
         return False
 
 
-def sample_next_exploration_point(estimated_surface, surface_uncertainty, strategy="max", temperature=0.1):
-    """
-    支持两种策略:
-    - "max": 选择不确定性最大的点
-    - "softmax": 以不确定性为权重做softmax采样（加点随机性，避免陷入局部）
-    """
-
-    if strategy == "max":
-        max_idx = np.argmax(surface_uncertainty)
-        next_point = estimated_surface[max_idx]
-    elif strategy == "softmax":
-        probs = np.exp(surface_uncertainty / temperature)
-        probs /= probs.sum()
-        idx = np.random.choice(len(estimated_surface), p=probs)
-        next_point = estimated_surface[idx]
-    else:
-        raise ValueError(f"Unknown strategy: {strategy}")
-
-    return torch.from_numpy(next_point).float().to('cuda').reshape(-1, 3)
-
-
+"""
+----------------------------
+# Store the points to buffer
+----------------------------
+"""
 def add_unique_position_tensor(new_pos, positions, tol=1e-6):
     """
     将 new_pos 添加到 positions (Tensor) 中，若 positions 中已有相近位置则不添加。
@@ -373,6 +260,83 @@ def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
                                                       touched_buffer)
 
     return touched_buffer, untouched_buffer
+
+
+"""
+-------------------------------
+# Generate next exploration point
+-------------------------------
+"""
+from sklearn.neighbors import NearestNeighbors
+
+
+def estimate_normal(surface: np.ndarray, index: int, k=20):
+    nbrs = NearestNeighbors(n_neighbors=k).fit(surface)
+    _, indices = nbrs.kneighbors([surface[index]])
+
+    neighbors = surface[indices[0]]
+    pca = np.cov(neighbors.T)
+    _, _, vh = np.linalg.svd(pca)
+    normal = vh[-1]  # 法向量是最小特征值对应的方向
+    return torch.tensor(normal, dtype=torch.float32, device='cuda')
+
+def generate_hand_pose_outside_surface(
+        surface: np.ndarray,
+        q_default: torch.Tensor,
+        hand_palm_dir_local: torch.Tensor,
+        offset: float = 0.05,
+        device: str = 'cuda'
+):
+    # 1. 采样表面点
+    idx = np.random.randint(len(surface))
+    p = surface[idx]
+    p_torch = torch.tensor(p, dtype=torch.float32, device=device)
+
+    # 2. 估算法向量（局部邻域 PCA）
+    from sklearn.neighbors import NearestNeighbors
+    nbrs = NearestNeighbors(n_neighbors=20).fit(surface)
+    _, indices = nbrs.kneighbors([p])
+    neighbors = surface[indices[0]]
+    cov = np.cov(neighbors.T)
+    _, _, vh = np.linalg.svd(cov)
+    n = vh[-1]  # 法向量（最小主成分方向）
+    n = torch.tensor(n, dtype=torch.float32, device=device)
+
+    # 3. 生成手的位置（往外移动）
+    position = p_torch - offset * n  # 法向量反方向
+
+    # 4. 当前手心朝向（世界坐标下）
+    palm_dir_world = quat_rotate(q_default, hand_palm_dir_local)
+
+    # 5. 构造旋转对齐
+    q_align = quat_from_two_vectors(palm_dir_world, n)
+
+    # 6. 新四元数
+    q_new = quat_mul(q_align, q_default)
+
+    return position, q_new
+
+def sample_next_exploration_point(estimated_surface, surface_uncertainty, strategy="max", temperature=0.1):
+    """
+    支持两种策略:
+    - "max": 选择不确定性最大的点
+    - "softmax": 以不确定性为权重做softmax采样（加点随机性，避免陷入局部）
+    """
+
+    if strategy == "max":
+        max_idx = np.argmax(surface_uncertainty)
+        next_point = estimated_surface[max_idx]
+    elif strategy == "softmax":
+        probs = np.exp(surface_uncertainty / temperature)
+        probs /= probs.sum()
+        idx = np.random.choice(len(estimated_surface), p=probs)
+        next_point = estimated_surface[idx]
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    return torch.from_numpy(next_point).float().to('cuda').reshape(-1, 3)
+
+
 
 def run_simulator(sim: sim_utils.SimulationContext, entities):
     """Runs the simulation loop."""
