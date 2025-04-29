@@ -94,14 +94,14 @@ class ExpllorationEnvCfg(InteractiveSceneCfg):
 
 
 def get_exploration_status(count):
-    if count == 200:
+    if count == 500:
         return True
     else:
         return False
 
 
 def get_grasp_status(count):
-    if count == 100:
+    if count == 250:
         return True
     else:
         return False
@@ -269,6 +269,23 @@ def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
 """
 from sklearn.neighbors import NearestNeighbors
 
+def is_normalized_quat(q, tol=1e-3):
+    norm = torch.linalg.norm(q)
+    return torch.abs(norm - 1.0) < tol
+
+def is_valid_quat(q):
+    return not torch.isnan(q).any() and not torch.isinf(q).any()
+
+
+def check_quat_validity(q, tol=1e-8):
+    if q.shape[-1] != 4:
+        return None
+    if not is_valid_quat(q):
+        return None
+    if not is_normalized_quat(q, tol):
+        # print("Warning: Quaternion not normalized. Normalizing automatically.")
+        q = q / torch.linalg.norm(q)
+    return q.reshape(-1,4)
 
 def estimate_normal(surface: np.ndarray, index: int, k=20):
     nbrs = NearestNeighbors(n_neighbors=k).fit(surface)
@@ -378,8 +395,10 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
     robot = entities['robot']
+    alpha = 0.05
     pos = torch.tensor([0, .2, -0.48], device="cuda")
     quat = torch.tensor((0.257551, 0.283045, 0.683330, -0.621782), device="cuda")
+    grasp_joint_pos = robot.data.default_joint_pos.clone()
 
     target_pos, target_quat = pos.reshape(-1, 3) + entities.env_origins[0], quat.reshape(-1, 4)
 
@@ -431,24 +450,30 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
                 #                                            strategy="softmax")  + entities.env_origins[0]
                 target_pos = sample_next_exploration_point(xstar, uncertainty,
                                                            strategy="softmax") + entities.env_origins[0]
-                # target_quat = torch.tensor((-0.0180, 0.3823, 0.9229, 0.0435), device="cuda").reshape(-1,4)
+                target_quat = torch.tensor((-0.0180, 0.3823, 0.9229, 0.0435), device="cuda").reshape(-1,4)
+                target_quat_check = check_quat_validity(target_quat)
+                if target_quat_check is not None:
+                    target_quat = target_quat_check
 
-            dof_pos = robot.data.default_joint_pos.clone()
-            robot.set_joint_position_target(dof_pos)
+            grasp_joint_pos = robot.data.default_joint_pos.clone()
 
             touched_buffer = torch.empty((0, 3), device="cuda")
             untouched_buffer = torch.empty((0, 3), device="cuda")
+
 
         elif get_grasp_status(count):
             # grasp
             if grasp == True:
                 # generate joint positions
-                joint_pos_target = robot.data.soft_joint_pos_limits[..., 1] - 0.9
-                robot.set_joint_position_target(joint_pos_target)
-                # pass
+                grasp_joint_pos = robot.data.soft_joint_pos_limits[..., 1] - 0.9
+
+        pre_joint_pos_target = (1 - alpha) * robot.data.joint_pos + alpha * grasp_joint_pos
+        robot.set_joint_position_target(pre_joint_pos_target)
 
         grasp = move_to(robot, controller, target_pos, target_quat)
-        touched_buffer, untouched_buffer = store_contact_points(robot, entities, touched_buffer, untouched_buffer)
+
+        if count % 50 ==0:
+            touched_buffer, untouched_buffer = store_contact_points(robot, entities, touched_buffer, untouched_buffer)
 
         # write data to sim
         ee_marker.visualize(robot.data.body_pos_w[0, 0, :].reshape(-1, 3) + entities.env_origins[0],
