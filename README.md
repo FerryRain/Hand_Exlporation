@@ -83,4 +83,3 @@ Hand_Exploration/
    python Exploration_env_stage2.py
    ```
 
-
