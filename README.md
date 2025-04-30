@@ -83,3 +83,8 @@ Hand_Exploration/
    python Exploration_env_stage2.py
    ```
 
+2. Check the 3D-pointscloud data
+    ```bash
+   cd Data
+   python Vis_points.py
+    ```
