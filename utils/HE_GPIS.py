@@ -5,6 +5,9 @@
 @Time：2025 4/25/25 9:12 AM
 @Copyright：©2024-2025 ShanghaiTech University-RIMLAB
 """
+import os
+from datetime import datetime
+
 import gpytorch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -199,7 +202,7 @@ class GPIS():
         self.likelihood.eval()
 
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            x = torch.FloatTensor(self.buffer_explored_x).cuda()
+            x = torch.FloatTensor(self.touched_x).cuda()
             observed_pred = self.likelihood(self.model(x))
             original_prediction = observed_pred.mean.cpu().numpy()
             # print(pred.shape)
@@ -282,8 +285,9 @@ class GPIS():
 class global_HE_GPIS(GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
                  origin_y, min_data, max_data, show_points=False, store=False, store_path=None):
-        super(global_HE_GPIS, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
-                         origin_y, min_data, max_data)
+        super(global_HE_GPIS, self).__init__(res, display_percentile_low, display_percentile_high, training_iter,
+                                             grid_count, origin_X,
+                                             origin_y, min_data, max_data)
 
         self.show_points = show_points
         if self.show_points:
@@ -293,7 +297,7 @@ class global_HE_GPIS(GPIS):
             self.ax.set_xlabel('X Axis')
             self.ax.set_ylabel('Y Axis')
             self.ax.set_zlabel('Z Axis')
-            self.ax.set_title('3D Scatter Plot of trainx (incremental)')
+            self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
             self.ax.legend()
             plt.ion()
             plt.show()
@@ -301,14 +305,13 @@ class global_HE_GPIS(GPIS):
             plt.pause(0.5)
 
         self.store = store
+        self.store_stem = 100
         if self.store:
-            import os
-            from datetime import datetime
             if store_path is None:
                 self.store_path = "./data"
             else:
                 self.store_path = store_path
-            timestamp = datetime.now().strftime("m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%m_%d_%H_%M")
             self.store_path = self.store_path + timestamp
             os.makedirs(self.store_path, exist_ok=True)
 
@@ -328,9 +331,12 @@ class global_HE_GPIS(GPIS):
                 self.draw_pointcloud(draw_points)
 
         self.time_step += 1
-        if self.time_step % 100 == 0 and self.store:
+        if self.time_step % self.store_stem == 0 and self.store and len(
+                self.estimated_surface) != 0 and self.estimated_surface is not None:
             save_path = os.path.join(self.store_path, f"estimated_surface_{self.time_step}.npy")
             np.save(save_path, self.estimated_surface)
+            print("--------------------------------------------------------")
+            print(f"saved estimated surface estimated_surface_{self.time_step}.npy to", save_path)
 
         return self.uncertainty, self.xstar, self.estimated_surface, self.estimated_surface_uncertainty, self.prediction
 
@@ -355,14 +361,17 @@ class global_HE_GPIS(GPIS):
             self.ax.set_xlim(xlim[0] - padding, xlim[1] + padding)
             self.ax.set_ylim(ylim[0] - padding, ylim[1] + padding)
             self.ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
+            self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
         plt.pause(0.5)
 
 
 class local_HE_GPIS(GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
-                 origin_y, min_data, max_data, show_points=False, slide_surface=False, surface_low=-0.02, surface_high=0.02):
-        super(local_HE_GPIS, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
-                         origin_y, min_data, max_data)
+                 origin_y, min_data, max_data, show_points=False, slide_surface=False, surface_low=-0.02,
+                 surface_high=0.02):
+        super(local_HE_GPIS, self).__init__(res, display_percentile_low, display_percentile_high, training_iter,
+                                            grid_count, origin_X,
+                                            origin_y, min_data, max_data)
         self.show_points = show_points
         if self.show_points:
             self.fig = plt.figure(figsize=(10, 8))
@@ -371,7 +380,7 @@ class local_HE_GPIS(GPIS):
             self.ax.set_xlabel('X Axis')
             self.ax.set_ylabel('Y Axis')
             self.ax.set_zlabel('Z Axis')
-            self.ax.set_title('3D Scatter Plot of trainx (incremental)')
+            self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
             self.ax.legend()
             plt.ion()
             plt.show()
@@ -422,6 +431,7 @@ class local_HE_GPIS(GPIS):
         self.ax.set_xlim(xlim[0] - padding, xlim[1] + padding)
         self.ax.set_ylim(ylim[0] - padding, ylim[1] + padding)
         self.ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
+        self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
         plt.pause(0.5)
 
 
@@ -476,10 +486,12 @@ class HE_GPIS():
         self.subregion_y = [np.array(block) for block in subregion_y]
 
         self.global_GPIS = global_HE_GPIS(res, display_percentile_low, display_percentile_high, training_iter,
-                                          grid_count, self.origin_X, self.origin_y, self.min_data, self.max_data,)
+                                          grid_count, self.origin_X, self.origin_y, self.min_data, self.max_data, )
         self.local_GPIS = [
             local_HE_GPIS(res, display_percentile_low, display_percentile_high, training_iter, grid_count,
-                          self.subregion_X[i], self.subregion_y[i], self.subregion_bounds[i, 0], self.subregion_bounds[i, 1]) for i in range(len(self.subregion_X))]
+                          self.subregion_X[i], self.subregion_y[i], self.subregion_bounds[i, 0],
+                          self.subregion_bounds[i, 1]) for i in range(len(self.subregion_X))]
+
 
 if __name__ == '__main__':
     grasp_data = np.load("../TEST/contact_points_merged.npy")
@@ -528,7 +540,8 @@ if __name__ == '__main__':
 
     train_X = np.array(train_X)
     train_y = np.array(train_y)
-    gpis = GPIS(res, display_percentile_low, display_percentile_high, training_iter, grid_count, train_X, train_y, min_data, max_data)
+    gpis = GPIS(res, display_percentile_low, display_percentile_high, training_iter, grid_count, train_X, train_y,
+                min_data, max_data)
 
     for batch_idx in range(num_batches):
         print(f'Batch {batch_idx + 1}/{num_batches}')
@@ -559,4 +572,3 @@ if __name__ == '__main__':
         ax.set_ylim(ylim[0] - padding, ylim[1] + padding)
         ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
         plt.pause(0.5)
-
