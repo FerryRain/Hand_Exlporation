@@ -69,6 +69,8 @@ class GPIS():
         self.xeva = np.reshape(self.xstar[:, 0], (tsize, tsize, tsize))
         self.yeva = np.reshape(self.xstar[:, 1], (tsize, tsize, tsize))
         self.zeva = np.reshape(self.xstar[:, 2], (tsize, tsize, tsize))
+
+        self.time_step = 0
         # self.init_model()
 
     def update(self, explored_new_x, explored_new_y):
@@ -236,6 +238,9 @@ class GPIS():
 
         mask = (self.prediction > self.original_pred_low) & (self.prediction < self.original_pred_high)
         self.estimated_surface = self.xstar[mask]
+
+        self.time_step += 1
+
         return self.uncertainty, self.estimated_surface
 
     def draw_Isosurface(self):
@@ -276,7 +281,7 @@ class GPIS():
 
 class global_HE_GPIS(GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
-                 origin_y, min_data, max_data, show_points=False):
+                 origin_y, min_data, max_data, show_points=False, store=False, store_path=None):
         super(global_HE_GPIS, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
                          origin_y, min_data, max_data)
 
@@ -295,6 +300,18 @@ class global_HE_GPIS(GPIS):
 
             plt.pause(0.5)
 
+        self.store = store
+        if self.store:
+            import os
+            from datetime import datetime
+            if store_path is None:
+                self.store_path = "./data"
+            else:
+                self.store_path = store_path
+            timestamp = datetime.now().strftime("m%d_%H%M%S")
+            self.store_path = self.store_path + timestamp
+            os.makedirs(self.store_path, exist_ok=True)
+
     def step(self, explored_new_x, explored_new_y):
         self.update(explored_new_x, explored_new_y)
         self.predict()
@@ -310,7 +327,12 @@ class global_HE_GPIS(GPIS):
             if self.show_points:
                 self.draw_pointcloud(draw_points)
 
-        return self.uncertainty, self.xstar, self.estimated_surface, self.estimated_surface_uncertainty
+        self.time_step += 1
+        if self.time_step % 100 == 0 and self.store:
+            save_path = os.path.join(self.store_path, f"estimated_surface_{self.time_step}.npy")
+            np.save(save_path, self.estimated_surface)
+
+        return self.uncertainty, self.xstar, self.estimated_surface, self.estimated_surface_uncertainty, self.prediction
 
     def draw_pointcloud(self, points):
         """
