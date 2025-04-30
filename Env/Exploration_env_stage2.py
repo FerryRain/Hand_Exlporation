@@ -106,11 +106,14 @@ def get_grasp_status(count):
     else:
         return False
 
+
 """
 -------------------------------
 # Init origin X and Y positions
 -------------------------------
 """
+
+
 def generate_init_origin_Xy(temp_min, temp_max, grid_count):
     min_data = temp_min - (
             temp_max - temp_min) * 0.2
@@ -184,12 +187,13 @@ def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
     return torch.stack([x, y, z, w])
 
 
-
 """
 --------------
 # move to func
 --------------
 """
+
+
 def move_to(robot, controller, pos, quat):
     controller.reset(torch.cat((pos, quat), dim=-1).reshape(-1, 7), [0])
     force, torques = controller.step(robot.data.root_state_w)
@@ -212,6 +216,8 @@ def move_to(robot, controller, pos, quat):
 # Store the points to buffer
 ----------------------------
 """
+
+
 def add_unique_position_tensor(new_pos, positions, tol=1e-6):
     """
     将 new_pos 添加到 positions (Tensor) 中，若 positions 中已有相近位置则不添加。
@@ -233,6 +239,7 @@ def add_unique_position_tensor(new_pos, positions, tol=1e-6):
 
     # 添加新点
     return torch.cat([positions, new_pos.unsqueeze(0)], dim=0)
+
 
 def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
     if torch.norm(entities["index_sensor"].data.force_matrix_w, dim=-1) > 0:
@@ -269,9 +276,11 @@ def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
 """
 from sklearn.neighbors import NearestNeighbors
 
+
 def is_normalized_quat(q, tol=1e-3):
     norm = torch.linalg.norm(q)
     return torch.abs(norm - 1.0) < tol
+
 
 def is_valid_quat(q):
     return not torch.isnan(q).any() and not torch.isinf(q).any()
@@ -285,7 +294,8 @@ def check_quat_validity(q, tol=1e-8):
     if not is_normalized_quat(q, tol):
         # print("Warning: Quaternion not normalized. Normalizing automatically.")
         q = q / torch.linalg.norm(q)
-    return q.reshape(-1,4)
+    return q.reshape(-1, 4)
+
 
 def estimate_normal(surface: np.ndarray, index: int, k=20):
     nbrs = NearestNeighbors(n_neighbors=k).fit(surface)
@@ -296,6 +306,7 @@ def estimate_normal(surface: np.ndarray, index: int, k=20):
     _, _, vh = np.linalg.svd(pca)
     normal = vh[-1]  # 法向量是最小特征值对应的方向
     return torch.tensor(normal, dtype=torch.float32, device='cuda')
+
 
 def generate_hand_pose_outside_surface(
         surface: np.ndarray,
@@ -333,6 +344,7 @@ def generate_hand_pose_outside_surface(
 
     return position, q_new
 
+
 def sample_next_exploration_point(estimated_surface, surface_uncertainty, strategy="max", temperature=0.1):
     """
     支持两种策略:
@@ -352,7 +364,6 @@ def sample_next_exploration_point(estimated_surface, surface_uncertainty, strate
         raise ValueError(f"Unknown strategy: {strategy}")
 
     return torch.from_numpy(next_point).float().to('cuda').reshape(-1, 3)
-
 
 
 def run_simulator(sim: sim_utils.SimulationContext, entities):
@@ -417,9 +428,12 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     origin_X, origin_y, min_data, max_data = generate_init_origin_Xy(temp_min, temp_max, grid_count)
 
     # init gpis model
-    gpis = global_HE_GPIS(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
-                          origin_y,
-                          min_data, max_data, show_points=True)
+    gpis = global_HE_GPIS(
+        res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+        origin_y,
+        min_data, max_data, show_points=True,
+        store=True, store_path="../Data/Exploration_env_stage2_"
+    )
 
     K_p_pos, K_i_pos, K_d_pos = 10.0, 0.0001, 7.0  # pos p i d of  PID
     K_p_rot, K_i_rot, K_d_rot = 0.5, 0.025, 0.65  # rot p i d of  PID
@@ -442,7 +456,8 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
                 [np.zeros((touched_buffer.cpu().numpy().shape[0])), np.ones((untouched_buffer.cpu().numpy().shape[0]))])
 
             # update gpis model and generate estimated_surface
-            uncertainty, xstar, estimated_surface, estimated_surface_uncertainty = gpis.step(update_buffer_x, update_buffer_y)
+            uncertainty, xstar, estimated_surface, estimated_surface_uncertainty, prediction = gpis.step(
+                update_buffer_x, update_buffer_y)
 
             # target_pos, target_quat = pos.reshape(-1,3) + entities.env_origins[0], quat.reshape(-1,4)
             if len(estimated_surface) > 0:
@@ -450,7 +465,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
                 #                                            strategy="softmax")  + entities.env_origins[0]
                 target_pos = sample_next_exploration_point(xstar, uncertainty,
                                                            strategy="softmax") + entities.env_origins[0]
-                target_quat = torch.tensor((-0.0180, 0.3823, 0.9229, 0.0435), device="cuda").reshape(-1,4)
+                target_quat = torch.tensor((-0.0180, 0.3823, 0.9229, 0.0435), device="cuda").reshape(-1, 4)
                 target_quat_check = check_quat_validity(target_quat)
                 if target_quat_check is not None:
                     target_quat = target_quat_check
@@ -472,7 +487,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
 
         grasp = move_to(robot, controller, target_pos, target_quat)
 
-        if count % 50 ==0:
+        if count % 50 == 0:
             touched_buffer, untouched_buffer = store_contact_points(robot, entities, touched_buffer, untouched_buffer)
 
         # write data to sim
