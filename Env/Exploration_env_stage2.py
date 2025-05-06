@@ -29,7 +29,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.markers import VisualizationMarkers, FRAME_MARKER_CFG
-from isaaclab_assets import ALLEGRO_HAND_CFG
+from allegro_hand_cfg import ALLEGRO_HAND_CFG
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
@@ -94,14 +94,14 @@ class ExpllorationEnvCfg(InteractiveSceneCfg):
 
 
 def get_exploration_status(count):
-    if count == 500:
+    if count == 250:
         return True
     else:
         return False
 
 
 def get_grasp_status(count):
-    if count == 250:
+    if count == 125:
         return True
     else:
         return False
@@ -406,7 +406,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
     robot = entities['robot']
-    alpha = 0.05
+    alpha = 0.1
     pos = torch.tensor([0, .2, -0.48], device="cuda")
     quat = torch.tensor((0.257551, 0.283045, 0.683330, -0.621782), device="cuda")
     grasp_joint_pos = robot.data.default_joint_pos.clone()
@@ -431,7 +431,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     gpis = global_HE_GPIS(
         res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
         origin_y,
-        min_data, max_data, show_points=True,
+        min_data, max_data, show_points=False,
         store=True, store_path="../Data/Exploration_env_stage2_"
     )
 
@@ -456,7 +456,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
                 [np.zeros((touched_buffer.cpu().numpy().shape[0])), np.ones((untouched_buffer.cpu().numpy().shape[0]))])
 
             # update gpis model and generate estimated_surface
-            uncertainty, xstar, estimated_surface, estimated_surface_uncertainty, prediction = gpis.step(
+            uncertainty, xstar, estimated_surface, estimated_surface_uncertainty, prediction, stimated_surface_prediction = gpis.step(
                 update_buffer_x, update_buffer_y)
 
             # target_pos, target_quat = pos.reshape(-1,3) + entities.env_origins[0], quat.reshape(-1,4)
