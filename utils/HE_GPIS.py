@@ -14,7 +14,8 @@ import numpy as np
 import open3d as o3d
 import plotly.graph_objects as go
 import torch
-
+from scipy.spatial.transform import Rotation as R
+from sklearn.neighbors import KDTree
 
 class ExactGPModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood):
@@ -68,6 +69,18 @@ class GPIS():
                 self.xstar[axis_min:axis_max, 2] = self.min_data[2] + (
                         (j + 1) * ((self.max_data[2] - self.min_data[2]) / self.res))
 
+        tree = KDTree(self.xstar)
+
+        self.selected_indices = []
+        visited = np.zeros(len(self.xstar), dtype=bool)
+
+        for i in range(len(self.xstar)):
+            if visited[i]:
+                continue
+            idx = tree.query_radius([self.xstar[i]], r=0.05)[0]
+            visited[idx] = True
+            self.selected_indices.append(i)
+
         tsize = self.res
         self.xeva = np.reshape(self.xstar[:, 0], (tsize, tsize, tsize))
         self.yeva = np.reshape(self.xstar[:, 1], (tsize, tsize, tsize))
@@ -97,7 +110,7 @@ class GPIS():
         self.untouched_y = np.ones_like((len(self.untouched_x)))
 
         gridpcd = o3d.geometry.PointCloud()
-        gridpcd.points = o3d.utility.Vector3dVector(self.origin_X)
+        gridpcd.points = o3d.utility.Vector3dVector(train_X)
         self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
 
         index = []
@@ -322,6 +335,7 @@ class global_HE_GPIS(GPIS):
         mask = (self.prediction > self.original_pred_low) & (self.prediction < self.original_pred_high)
         self.estimated_surface = self.xstar[mask]
         self.estimated_surface_uncertainty = self.uncertainty[mask]
+        self.estimated_surface_prediction = self.prediction[mask]
 
         if len(self.estimated_surface) != 0:
             N = min(1000, self.estimated_surface.shape[0])
@@ -338,7 +352,7 @@ class global_HE_GPIS(GPIS):
             print("--------------------------------------------------------")
             print(f"saved estimated surface estimated_surface_{self.time_step}.npy to", save_path)
 
-        return self.uncertainty, self.xstar, self.estimated_surface, self.estimated_surface_uncertainty, self.prediction
+        return self.uncertainty[self.selected_indices], self.xstar[self.selected_indices], self.estimated_surface, self.estimated_surface_uncertainty, self.prediction[self.selected_indices], self.estimated_surface_prediction
 
     def draw_pointcloud(self, points):
         """
