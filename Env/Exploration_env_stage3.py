@@ -129,7 +129,7 @@ def calculate_points_score(
     # Distance penalty D(x)
     D = -np.linalg.norm(origin_points - hand_pos_now.squeeze(), axis=1)  # (1401,)
     # Information score I(x)
-    I = np.exp(-np.abs(prediction) / epsilon) * uncertainty * 1e10 # (1401,)
+    I = np.exp(-np.abs(prediction) / epsilon) * uncertainty # (1401,)
 
     U_norm = normalize(U)
     D_norm = normalize(D)
@@ -148,7 +148,8 @@ def calculate_points_score(
 
 def sample_next_exploration_point_surface(surface_points, uncertainty, prediction, hand_pos_now, explored_queue, hand_quat):
     explored_queue_np = np.array(explored_queue).reshape(-1, 3)
-    surface_points_pruned, uncertainty_pruned, prediction_pruned = kd_pruning(surface_points, uncertainty, prediction)
+    selected_idx = kd_pruning(surface_points)
+    surface_points_pruned, uncertainty_pruned, prediction_pruned = surface_points[selected_idx], uncertainty[selected_idx], prediction[selected_idx]
     surface_points_cutdown, uncertainty_cutdown, prediction_cutdown = kd_cut_down(
         surface_points_pruned,
         explored_queue_np,
@@ -192,14 +193,14 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     target_pos, target_quat = pos.reshape(-1, 3) + entities.env_origins[0], quat.reshape(-1, 4)
 
     # Initialize buffer
-    touched_buffer = torch.empty((0, 3), device="cuda")
-    untouched_buffer = torch.empty((0, 3), device="cuda")
+    touched_buf = torch.empty((0, 3), device="cuda")
+    untouched_buf = torch.empty((0, 3), device="cuda")
     explored_queue = deque(maxlen=10)
 
     # init global_HE_GPIS model
-    temp_min = np.array([-0.42, -0.42, -0.42])
-    temp_max = np.array([0.42, 0.42, 0.42])
-    gpis = init_global_HE_GPIS_model(temp_min, temp_max)
+    temp_min = np.array([-0.55, -0.55, -0.55])
+    temp_max = np.array([0.55, 0.55, 0.55])
+    gpis = init_global_HE_GPIS_model(temp_min, temp_max, store_path="../Data/Exploration_env_stage3_")
 
     # init Hand position Controller (local control in isaaclab)
     K_p_pos, K_i_pos, K_d_pos = 10.0, 0.0001, 7.0  # pos p i d of  PID
@@ -217,9 +218,9 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
             # update buffer
             sim_time = 0.0
             count = 0
-            update_buffer_x = np.vstack([touched_buffer.cpu().numpy(), untouched_buffer.cpu().numpy()])
+            update_buffer_x = np.vstack([touched_buf.cpu().numpy(), untouched_buf.cpu().numpy()])
             update_buffer_y = np.hstack(
-                [np.zeros((touched_buffer.cpu().numpy().shape[0])), np.ones((untouched_buffer.cpu().numpy().shape[0]))])
+                [np.zeros((touched_buf.cpu().numpy().shape[0])), np.ones((untouched_buf.cpu().numpy().shape[0]))])
 
             # update gpis model and generate estimated_surface
             uncertainty, xstar, estimated_surface, estimated_surface_uncertainty, prediction, estimated_surface_prediction = gpis.step(
@@ -241,8 +242,8 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
 
             grasp_joint_pos = robot.data.default_joint_pos.clone()
 
-            touched_buffer = torch.empty((0, 3), device="cuda")
-            untouched_buffer = torch.empty((0, 3), device="cuda")
+            touched_buf = torch.empty((0, 3), device="cuda")
+            untouched_buf = torch.empty((0, 3), device="cuda")
 
 
         elif get_grasp_status(count):
@@ -255,10 +256,11 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
         move_to(robot, controller, target_pos, target_quat)
 
         if count % 50 == 0:
-            touched_buffer, untouched_buffer = store_contact_points(robot, entities, touched_buffer, untouched_buffer)
+            touched_buf, untouched_buf = store_contact_points(robot, entities, touched_buf, untouched_buf)
 
         # write data to sim
-        count, sim_time = env_step(ee_marker, goal_marker, robot, entities, target_pos, target_quat, sim, sim_time,
+        count, sim_time = env_step(ee_marker, goal_marker, robot, robot.data.body_pos_w, robot.data.body_quat_w,
+                                   entities, target_pos, target_quat, sim, sim_time,
                                    sim_dt, count, scene)
 
 
