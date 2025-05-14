@@ -1,8 +1,8 @@
 """
-@FileName：Exploration_env_stage6.py
+@FileName：Exploration_env_stage6_2(radius0.15).py
 @Description：
 @Author：Ferry
-@Time：2025 5/12/25 9:02 PM
+@Time：2025 5/14/25 3:08 PM
 @Copyright：©2024-2025 ShanghaiTech University-RIMLAB
 """
 
@@ -52,14 +52,14 @@ class ExpllorationEnvCfg(InteractiveSceneCfg):
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(.0, .0, 1.0)),
                 activate_contact_sensors=True,
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.56)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.16)),
         )
         }
     )
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/object",
         spawn=sim_utils.SphereCfg(
-            radius=0.5,
+            radius=0.15,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=False, disable_gravity=True,
                                                          max_linear_velocity=.0, max_angular_velocity=.0),
             mass_props=sim_utils.MassPropertiesCfg(mass=10000),
@@ -97,8 +97,8 @@ def move_to_base(robot, controller, pos, quat):
 
 def move_to(robot, controller, quat, gpis, hand_pos_now, entities, contact_force, alpha_base=0.03, beta_base=0.05):
     if contact_detect(contact_force):
-        alpha = alpha_base / 3
-        beta = beta_base * 2
+        alpha = alpha_base / 2
+        beta = beta_base
     else:
         alpha = alpha_base * 2
         beta = beta_base
@@ -133,13 +133,13 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
 
     # Define the frame marker
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
-    frame_marker_cfg.markers["frame"].scale = (.1, .1, .1)
+    frame_marker_cfg.markers["frame"].scale = (.01, .01, .01)
     ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
     goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
     # Init Robot state
     robot = entities['robot']
-    pos = torch.tensor([0, 0.4, 0.2], device="cuda")
+    pos = torch.tensor([0, 0.2, 0.0], device="cuda")
     quat = torch.tensor((0.257551, 0.283045, 0.683330, -0.621782), device="cuda")
     target_pos, target_quat = pos.reshape(-1, 3) + entities.env_origins[0], quat.reshape(-1, 4)
 
@@ -149,9 +149,9 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     explored_queue = deque(maxlen=10)
 
     # init global_HE_GPIS model
-    temp_min = np.array([-0.5, -0.5, -0.5])
-    temp_max = np.array([0.5, 0.5, 0.5])
-    gpis = init_normal_HE_GPIS_model(temp_min, temp_max, store_path="../Data/Exploration_env_stage6_")
+    temp_min = np.array([-0.2, -0.2, -0.2])
+    temp_max = np.array([0.2, 0.2, 0.2])
+    gpis = init_normal_HE_GPIS_model(temp_min, temp_max, res=100, grid_count=4, store_path="../Data/Exploration_env_stage6_")
     # gpis = init_global_HE_GPIS_model(temp_min, temp_max, grid_count=5, store_path="../Data/Exploration_env_stage5_")
 
     # init Hand position Controller (local control in isaaclab)

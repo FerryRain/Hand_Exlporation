@@ -9,7 +9,7 @@ import open3d as o3d
 import numpy as np
 
 
-points = np.load("../Data/Exploration_env_stage2_04_30_19_24/estimated_surface_200.npy")
+points = np.load("../Data/Exploration_env_stage4_05_13_16_55/estimated_surface_100.npy")
 
 
 pcd = o3d.geometry.PointCloud()
