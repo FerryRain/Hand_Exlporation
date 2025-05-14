@@ -95,7 +95,7 @@ def move_to_base(robot, controller, pos, quat):
                                         object_ids=[0])
 
 
-def move_to(robot, controller, quat, gpis, hand_pos_now, entities, contact_force, alpha_base=0.03, beta_base=0.05):
+def move_to_new(robot, controller, quat, gpis, hand_pos_now, entities, contact_force, alpha_base=0.03, beta_base=0.05):
     if contact_detect(contact_force):
         alpha = alpha_base / 2
         beta = beta_base
@@ -193,7 +193,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
             untouched_buf = torch.empty((0, 3), device="cuda")
 
         if len(estimated_surface) > 0 and count % 50 == 0:
-            target_pos = move_to(robot, controller, target_quat, gpis,
+            target_pos = move_to_new(robot, controller, target_quat, gpis,
                                  robot.data.object_pos_w[:, 0, :].reshape(-1, 3).to("cpu").numpy(),
                                  entities, entities["sensor"].data.force_matrix_w)
         else:
