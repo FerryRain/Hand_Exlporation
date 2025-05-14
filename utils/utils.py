@@ -126,7 +126,7 @@ def contact_detect(froce):
     else:
         return False
 
-def add_unique_position_tensor(new_pos, positions, tol=1e-6):
+def add_unique_position_tensor(new_pos, positions, tol=1e-2):
     if positions.numel() == 0:
         return new_pos.unsqueeze(0)
 
@@ -168,10 +168,10 @@ def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
 
 def store_contact_points_sphere(robot, entities, touched_buffer, untouched_buffer):
     if contact_detect(entities["sensor"].data.force_matrix_w):
-        touched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), touched_buffer)
+        touched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), touched_buffer.clone())
         # touched_buffer = torch.cat([touched_buffer, entities["sensor"].data.pos_w.reshape(-1).unsqueeze(0)], dim=0)
     else:
-        untouched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), untouched_buffer)
+        untouched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), untouched_buffer.clone())
 
     return touched_buffer, untouched_buffer
 
