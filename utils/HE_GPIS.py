@@ -45,6 +45,18 @@ class ExactGPModel(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
+def kd_exact(points, cut_down_queue, k=10):
+    tree = KDTree(points)
+    index = []
+    k = min(k, len(points))
+    for p in cut_down_queue:
+        dist, idx = tree.query([p], k=k)
+        index.extend(idx[0])  # idx is a 2D array
+
+    mask = np.ones(len(points), dtype=bool)
+    mask[index] = False
+
+    return mask
 
 class GPIS():
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
@@ -103,6 +115,14 @@ class GPIS():
         self.time_step = 0
         # self.init_model()
 
+    def init_datasets(self, x, y, buffer_x, buffer_y):
+        mask = kd_exact(x, buffer_x, k=self.k_nearest)
+        train_X = x[mask]
+        train_y = y[mask]
+        train_X = np.vstack([train_X, buffer_x])
+        train_y = np.hstack([train_y, buffer_y])
+        return train_X, train_y
+
     def update(self, explored_new_x, explored_new_y):
         """
         Update the model by the new points hands exploration.
@@ -123,91 +143,9 @@ class GPIS():
         self.untouched_x = np.vstack([self.untouched_x, explored_new_x[np.where(explored_new_y == 1)]])
         self.untouched_y = np.ones((self.untouched_x.shape[0]))
 
-        # gridpcd = o3d.geometry.PointCloud()
-        # gridpcd.points = o3d.utility.Vector3dVector(train_X)
-        # self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
-        #
-        # index = []
-        #
-        # for p in self.buffer_explored_x:
-        #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-        #     for m in range(k):
-        #         index.append(idx[m])
-        #
-        # # for p in self.touched_x:
-        # #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-        # #     for m in range(k):
-        # #         index.append(idx[m])
-        # mask = np.ones(len(train_X), dtype=bool)
-        # mask[index] = False
-        # train_X = train_X[mask]
-        # train_y = train_y[mask]
-        #
-        # train_X = np.vstack([train_X, self.buffer_explored_x])
-        # train_y = np.hstack([train_y, self.buffer_explored_y])
-
-        gridpcd = o3d.geometry.PointCloud()
-        gridpcd.points = o3d.utility.Vector3dVector(train_X)
-        self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
-
-        index = []
-
-        for p in self.untouched_x:
-            [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-            for m in range(k):
-                index.append(idx[m])
-
-        # for p in self.touched_x:
-        #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-        #     for m in range(k):
-        #         index.append(idx[m])
-        mask = np.ones(len(train_X), dtype=bool)
-        mask[index] = False
-        train_X = train_X[mask]
-        train_y = train_y[mask]
-
-        train_X = np.vstack([train_X, self.untouched_x])
-        train_y = np.hstack([train_y, self.untouched_y])
-
-        gridpcd = o3d.geometry.PointCloud()
-        gridpcd.points = o3d.utility.Vector3dVector(train_X)
-        self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
-
-        index = []
-
-        for p in self.touched_x:
-            [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-            for m in range(k):
-                index.append(idx[m])
-
-        # for p in self.touched_x:
-        #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-        #     for m in range(k):
-        #         index.append(idx[m])
-        mask = np.ones(len(train_X), dtype=bool)
-        mask[index] = False
-        train_X = train_X[mask]
-        train_y = train_y[mask]
-
-        train_X = np.vstack([train_X, self.touched_x])
-        train_y = np.hstack([train_y, self.touched_y])
-
-        # gridpcd = o3d.geometry.PointCloud()
-        # gridpcd.points = o3d.utility.Vector3dVector(self.origin_X)
-        # self.kdtree_gridpcd = o3d.geometry.KDTreeFlann(gridpcd)
-        # index = []
-        # for p in self.untouched_x:
-        #     [k, idx, dis_sqr] = self.kdtree_gridpcd.search_knn_vector_3d(p, self.k_nearest)
-        #     for m in range(k):
-        #         index.append(idx[m])
-        #
-        # y_buf = np.zeros_like(self.origin_y)
-        # mask = np.ones(len(self.origin_X), dtype=bool)
-        # mask[index] = False
-        # y_buf[mask] = self.origin_y[mask]
-        #
-        # train_X = np.vstack([self.origin_X, self.untouched_x])
-        # train_y = np.hstack([y_buf, np.zeros(self.touched_x.shape[0])])
+        train_X, train_y = self.init_datasets(train_X, train_y, self.untouched_x, self.untouched_y)
+        train_X, train_y = self.init_datasets(train_X, train_y, self.touched_x, self.touched_y)
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.buffer_explored_x, self.buffer_explored_y)
 
         self.xstar = np.zeros((self.res ** 3, 3))
 
