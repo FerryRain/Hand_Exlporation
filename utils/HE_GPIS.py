@@ -870,6 +870,209 @@ class normal_HE_GPIS(global_HE_GPIS):
 
         return prediction, uncertainty, variance_gradients, miu_gradients, miu_normals
 
+
+class normal_HE_GPIS_2(normal_HE_GPIS):
+    def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, object_bb_min, object_bb_max, show_points=False, store=False, store_path=None):
+        super(normal_HE_GPIS_2, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, show_points=show_points, store=store, store_path=store_path)
+        self.object_bb_max = object_bb_max
+        self.object_bb_min = object_bb_min
+
+class normal_HE_GPIS_3(normal_HE_GPIS):
+    def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, object_bb_min, object_bb_max, show_points=False, store=False, store_path=None):
+        super(normal_HE_GPIS_3, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, show_points=show_points, store=store, store_path=store_path)
+        self.object_bb_max = object_bb_max
+        self.object_bb_min = object_bb_min
+
+    def update(self, explored_new_x, explored_new_y):
+        """
+        Update the model by the new points hands exploration.
+        Args:
+            explored_new_x:  The new points axis of hand has explored.
+            explored_new_y:  The new points values of hand has explored. (0--untouched 1--touched)
+
+        Returns:
+            None.
+        """
+        train_X = self.origin_X.copy()
+        train_y = self.origin_y.copy()
+
+        self.buffer_explored_x = np.vstack([self.buffer_explored_x, explored_new_x])
+        self.buffer_explored_y = np.hstack([self.buffer_explored_y, explored_new_y])
+        self.touched_x = np.vstack([self.touched_x, explored_new_x[np.where(explored_new_y == 0)]])
+        self.touched_y = np.zeros((self.touched_x.shape[0]))
+        self.untouched_x = np.vstack([self.untouched_x, explored_new_x[np.where(explored_new_y == 1)]])
+        self.untouched_y = np.ones((self.untouched_x.shape[0]))
+
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.untouched_x, self.untouched_y)
+        train_X, train_y = self.init_datasets(train_X, train_y, self.touched_x, self.touched_y)
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.buffer_explored_x, self.buffer_explored_y)
+        train_X = np.vstack([train_X, self.untouched_x])
+        train_y = np.hstack([train_y, self.untouched_y])
+
+        self.xstar = np.zeros((self.res ** 3, 3))
+
+        for j in range(self.res):
+            for i in range(self.res):
+                d = j * self.res ** 2  # Delta
+                axis_min = d + self.res * i
+                axis_max = self.res * (i + 1) + d
+
+                self.xstar[axis_min:axis_max, 0] = np.linspace(self.min_data[0], self.max_data[0], num=self.res)  # in X
+                self.xstar[axis_min:axis_max, 1] = self.min_data[1] + i * (
+                        (self.max_data[1] - self.min_data[1]) / self.res)  # in X
+                self.xstar[axis_min:axis_max, 2] = self.min_data[2] + (
+                        (j + 1) * ((self.max_data[2] - self.min_data[2]) / self.res))
+
+        tsize = self.res
+        self.xeva = np.reshape(self.xstar[:, 0], (tsize, tsize, tsize))
+        self.yeva = np.reshape(self.xstar[:, 1], (tsize, tsize, tsize))
+        self.zeva = np.reshape(self.xstar[:, 2], (tsize, tsize, tsize))
+
+        X = torch.FloatTensor(train_X).cuda()
+        y = torch.FloatTensor(train_y).cuda()
+
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood().cuda()
+        self.model = ExactGPModel(X, y, self.likelihood).cuda()
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        self.model.train()
+        self.likelihood.train()
+
+        print("Updating model")
+        print("--------------------------------------------------------")
+
+        optimizer = torch.optim.Adam([
+            {'params': self.model.parameters()},  # Includes GaussianLikelihood parameters
+        ], lr=0.1)
+
+        for i in range(self.training_iter):
+            # Zero gradients from previous iteration
+            optimizer.zero_grad()
+            # Output from model
+            output = self.model(X)
+            # Calc loss and backprop gradients
+            loss = -mll(output, y)
+            loss.backward()
+            # print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+            #     i + 1, self.training_iter, loss.item(),
+            #     self.model.covar_module.base_kernel.lengthscale.item(),
+            #     self.model.likelihood.noise.item()
+            # ))
+            optimizer.step()
+
+class normal_HE_GPIS_4(normal_HE_GPIS):
+    def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, object_bb_min, object_bb_max, show_points=False, store=False, store_path=None):
+        super(normal_HE_GPIS_4, self).__init__(res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+                 origin_y, min_data, max_data, show_points=show_points, store=store, store_path=store_path)
+        self.object_bb_max = object_bb_max
+        self.object_bb_min = object_bb_min
+        self.train_X = np.empty((0, 3))
+        self.train_y = np.empty((0))
+
+    def update(self, explored_new_x, explored_new_y):
+        """
+        Update the model by the new points hands exploration.
+        Args:
+            explored_new_x:  The new points axis of hand has explored.
+            explored_new_y:  The new points values of hand has explored. (0--untouched 1--touched)
+
+        Returns:
+            None.
+        """
+        current_len = self.train_X.shape[0]
+        target_len = self.touched_x.shape[0] - self.untouched_x.shape[0]
+        remaining = target_len - current_len
+
+        if remaining <= 0:
+            pass
+        else:
+            mask = np.ones(self.origin_X.shape[0], dtype=bool)
+            if self.train_X.shape[0] > 0:
+                from sklearn.neighbors import KDTree
+                tree = KDTree(self.origin_X)
+                idx = tree.query(self.train_X, k=1, return_distance=False).flatten()
+                mask[idx] = False
+
+            origin_X_remaining = self.origin_X[mask]
+            a = min(remaining, origin_X_remaining.shape[0])
+            idx_selected = np.random.choice(origin_X_remaining.shape[0], size=a, replace=False)
+            selected_X = origin_X_remaining[idx_selected]
+
+            self.train_X = np.vstack([self.train_X, selected_X])
+            self.train_y = np.ones((self.train_X.shape[0]))
+        train_X = self.train_X.copy()
+        train_y = self.train_y.copy()
+
+        self.buffer_explored_x = np.vstack([self.buffer_explored_x, explored_new_x])
+        self.buffer_explored_y = np.hstack([self.buffer_explored_y, explored_new_y])
+        self.touched_x = np.vstack([self.touched_x, explored_new_x[np.where(explored_new_y == 0)]])
+        self.touched_y = np.zeros((self.touched_x.shape[0]))
+        self.untouched_x = np.vstack([self.untouched_x, explored_new_x[np.where(explored_new_y == 1)]])
+        self.untouched_y = np.ones((self.untouched_x.shape[0]))
+
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.untouched_x, self.untouched_y)
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.touched_x, self.touched_y)
+        # train_X, train_y = self.init_datasets(train_X, train_y, self.buffer_explored_x, self.buffer_explored_y)
+
+        train_X = np.vstack([train_X, self.buffer_explored_x])
+        train_y = np.hstack([train_y, self.buffer_explored_y])
+
+        self.xstar = np.zeros((self.res ** 3, 3))
+
+        for j in range(self.res):
+            for i in range(self.res):
+                d = j * self.res ** 2  # Delta
+                axis_min = d + self.res * i
+                axis_max = self.res * (i + 1) + d
+
+                self.xstar[axis_min:axis_max, 0] = np.linspace(self.min_data[0], self.max_data[0], num=self.res)  # in X
+                self.xstar[axis_min:axis_max, 1] = self.min_data[1] + i * (
+                        (self.max_data[1] - self.min_data[1]) / self.res)  # in X
+                self.xstar[axis_min:axis_max, 2] = self.min_data[2] + (
+                        (j + 1) * ((self.max_data[2] - self.min_data[2]) / self.res))
+
+        tsize = self.res
+        self.xeva = np.reshape(self.xstar[:, 0], (tsize, tsize, tsize))
+        self.yeva = np.reshape(self.xstar[:, 1], (tsize, tsize, tsize))
+        self.zeva = np.reshape(self.xstar[:, 2], (tsize, tsize, tsize))
+
+        X = torch.FloatTensor(train_X).cuda()
+        y = torch.FloatTensor(train_y).cuda()
+
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood().cuda()
+        self.model = ExactGPModel(X, y, self.likelihood).cuda()
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        self.model.train()
+        self.likelihood.train()
+
+        print("Updating model")
+        print("--------------------------------------------------------")
+
+        optimizer = torch.optim.Adam([
+            {'params': self.model.parameters()},  # Includes GaussianLikelihood parameters
+        ], lr=0.1)
+
+        for i in range(self.training_iter):
+            # Zero gradients from previous iteration
+            optimizer.zero_grad()
+            # Output from model
+            output = self.model(X)
+            # Calc loss and backprop gradients
+            loss = -mll(output, y)
+            loss.backward()
+            # print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+            #     i + 1, self.training_iter, loss.item(),
+            #     self.model.covar_module.base_kernel.lengthscale.item(),
+            #     self.model.likelihood.noise.item()
+            # ))
+            optimizer.step()
+
 if __name__ == '__main__':
     grasp_data = np.load("../TEST/contact_points_merged.npy")
 

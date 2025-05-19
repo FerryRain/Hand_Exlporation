@@ -6,12 +6,11 @@
 @Copyright：©2024-2025 ShanghaiTech University-RIMLAB
 """
 
-
 import numpy as np
 import torch
-from utils.HE_GPIS import global_HE_GPIS, local_HE_GPIS, HE_GPIS, normal_HE_GPIS
 from scipy.spatial.transform import Rotation as R
 from sklearn.neighbors import KDTree
+from utils.HE_GPIS import global_HE_GPIS, normal_HE_GPIS, normal_HE_GPIS_2, normal_HE_GPIS_3, normal_HE_GPIS_4
 
 """
 -------------------------------
@@ -60,6 +59,26 @@ def generate_init_origin_Xy(temp_min, temp_max, grid_count):
     origin_X = np.array(origin_X)
     origin_y = np.array(origin_y)
     return origin_X, origin_y, temp_min, temp_max
+
+
+def generate_init_origin_Xy_layered(outer_min, outer_max, inner_min, inner_max, grid_count):
+    x_axis = np.linspace(outer_min[0], outer_max[0], grid_count)
+    y_axis = np.linspace(outer_min[1], outer_max[1], grid_count)
+    z_axis = np.linspace(outer_min[2], outer_max[2], grid_count)
+
+    origin_X = []
+    for x in x_axis:
+        for y in y_axis:
+            for z in z_axis:
+                if (inner_min[0] <= x <= inner_max[0] and
+                        inner_min[1] <= y <= inner_max[1] and
+                        inner_min[2] <= z <= inner_max[2]):
+                    continue
+                origin_X.append([x, y, z])
+
+    origin_X = np.array(origin_X)
+    origin_y = np.ones(len(origin_X))
+    return origin_X, origin_y, outer_min, outer_max, inner_min, inner_max
 
 
 def quat_rotate(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -120,11 +139,13 @@ def quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
 ----------------------------
 """
 
+
 def contact_detect(froce):
     if torch.norm(froce, dim=-1) > 0:
         return True
     else:
         return False
+
 
 def add_unique_position_tensor(new_pos, positions, tol=1e-2):
     if positions.numel() == 0:
@@ -166,12 +187,14 @@ def store_contact_points(robot, entities, touched_buffer, untouched_buffer):
 
     return touched_buffer, untouched_buffer
 
+
 def store_contact_points_sphere(robot, entities, touched_buffer, untouched_buffer):
     if contact_detect(entities["sensor"].data.force_matrix_w):
         touched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), touched_buffer.clone())
         # touched_buffer = torch.cat([touched_buffer, entities["sensor"].data.pos_w.reshape(-1).unsqueeze(0)], dim=0)
     else:
-        untouched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1), untouched_buffer.clone())
+        untouched_buffer = add_unique_position_tensor(entities["sensor"].data.pos_w.reshape(-1),
+                                                      untouched_buffer.clone())
 
     return touched_buffer, untouched_buffer
 
@@ -206,12 +229,14 @@ def check_quat_validity(q, tol=1e-8):
         q = q / torch.linalg.norm(q)
     return q.reshape(-1, 4)
 
+
 def kd_nearest(points, pos):
     tree = KDTree(points)
 
     dist, idx = tree.query([pos[0]], k=1)
 
     return idx[0]
+
 
 def kd_pruning(points, radius=0.05):
     tree = KDTree(points)
@@ -297,6 +322,7 @@ def calculate_rot(target_pos, surface_points, hand_quat):
     quat_target = align_hand_palm(hand_quat, -hand_normal)
     return quat_target
 
+
 def compute_projected_unit_direction_np(grad, normal):
     """
     d_i = (P_n(x) * grad) / ||P_n(x) * grad||_2
@@ -304,12 +330,13 @@ def compute_projected_unit_direction_np(grad, normal):
     normal = normal / (np.linalg.norm(normal) + 1e-10)
 
     P_n = np.eye(3) - np.outer(normal, normal)
-    projected = P_n @ grad.reshape(3,)
+    projected = P_n @ grad.reshape(3, )
 
     norm = np.linalg.norm(projected) + 1e-10
     d_i = projected / norm
 
     return d_i.reshape(-1, 3)
+
 
 """
 -------------------------------
@@ -318,7 +345,8 @@ def compute_projected_unit_direction_np(grad, normal):
 """
 
 
-def env_step(ee_marker, goal_marker, robot, body_pos_w, body_quat_w, entities, target_pos, target_quat, sim, sim_time, sim_dt, count, scene):
+def env_step(ee_marker, goal_marker, robot, body_pos_w, body_quat_w, entities, target_pos, target_quat, sim, sim_time,
+             sim_dt, count, scene):
     # write data to sim
     ee_marker.visualize(body_pos_w[:, 0, :].reshape(-1, 3) + entities.env_origins[0],
                         body_quat_w[:, 0, :].reshape(-1, 4))
@@ -353,6 +381,7 @@ def init_global_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_lo
 
     return gpis
 
+
 def init_normal_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_low=10, display_percentile_high=90,
                               training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
     origin_X, origin_y, min_data, max_data = generate_init_origin_Xy(temp_min, temp_max, grid_count)
@@ -368,12 +397,61 @@ def init_normal_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_lo
     return gpis
 
 
+def init_normal_HE_GPIS_model_2(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
+                                display_percentile_high=90,
+                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+    origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
+                                                                                           bb_max, grid_count)
+
+    # init gpis model
+    gpis = normal_HE_GPIS_2(
+        res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+        origin_y,
+        min_data, max_data, bbmin, bbmax, show_points=True,
+        store=True, store_path=store_path
+    )
+
+    return gpis
+
+def init_normal_HE_GPIS_model_3(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
+                                display_percentile_high=90,
+                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+    origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
+                                                                                           bb_max, grid_count)
+
+    # init gpis model
+    gpis = normal_HE_GPIS_3(
+        res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+        origin_y,
+        min_data, max_data, bbmin, bbmax, show_points=True,
+        store=True, store_path=store_path
+    )
+
+    return gpis
+
+def init_normal_HE_GPIS_model_4(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
+                                display_percentile_high=90,
+                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+    origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
+                                                                                           bb_max, grid_count)
+
+    # init gpis model
+    gpis = normal_HE_GPIS_4(
+        res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
+        origin_y,
+        min_data, max_data, bbmin, bbmax, show_points=True,
+        store=True, store_path=store_path
+    )
+
+    return gpis
+
 
 """
 -------------------------------
 # Compute Uncertainty Measure
 -------------------------------
 """
+
 
 def compute_mean_surface_uncertainty(variance, area_weights):
     """
