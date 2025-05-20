@@ -18,7 +18,7 @@ from sklearn.neighbors import KDTree
 
 
 class InverseMultiquadricKernel(gpytorch.kernels.Kernel):
-    has_lengthscale = True  # 告诉gpytorch，这个核有lengthscale超参数
+    has_lengthscale = True
 
     def forward(self, x1, x2, diag=False, **params):
         # x1: (..., N, D), x2: (..., M, D)
@@ -29,7 +29,6 @@ class InverseMultiquadricKernel(gpytorch.kernels.Kernel):
             dist2 = dist2.diagonal(dim1=-2, dim2=-1)
 
         return 1.0 / torch.sqrt(dist2 + self.lengthscale.squeeze() ** 2)
-
 
 class ExactGPModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood):
@@ -263,11 +262,13 @@ class GPIS():
             x = torch.FloatTensor(points).cuda()
             observed_pred = self.likelihood(self.model(x))
             prediction = observed_pred.mean.cpu().numpy()
+            uncertainty = observed_pred.variance.cpu().numpy()
             confidence_lower, confidence_upper = observed_pred.confidence_region()
             confidence_lower = confidence_lower.cpu().numpy()
             confidence_upper = confidence_upper.cpu().numpy()
             prediction_buf.append(prediction)
             uncertainty_buf.append(confidence_upper - confidence_lower)
+            # uncertainty_buf.append(uncertainty)
             # print(pred.shape)
             self.original_confidence_lower, self.original_confidence_upper = observed_pred.confidence_region()
         prediction = np.hstack(prediction_buf)
@@ -321,7 +322,6 @@ class GPIS():
         ]
         )
         fig.show()
-
 
 class global_HE_GPIS(GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
@@ -416,7 +416,6 @@ class global_HE_GPIS(GPIS):
             self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
         plt.pause(0.5)
 
-
 class local_HE_GPIS(GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
                  origin_y, min_data, max_data, show_points=False, slide_surface=False, surface_low=-0.02,
@@ -492,7 +491,6 @@ class local_HE_GPIS(GPIS):
         self.ax.set_zlim(zlim[0] - padding, zlim[1] + padding)
         self.ax.set_title(f'3D Scatter Plot of trainx step {self.time_step}')
         plt.pause(0.5)
-
 
 class HE_GPIS():
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, min_data,
@@ -856,20 +854,23 @@ class normal_HE_GPIS(global_HE_GPIS):
             confidence_lower, confidence_upper = observed_pred.confidence_region()
             confidence_lower = confidence_lower.cpu().numpy()
             confidence_upper = confidence_upper.cpu().numpy()
+            uncertainty = observed_pred.variance.cpu().numpy()
             prediction_buf.append(prediction)
             uncertainty_buf.append(confidence_upper - confidence_lower)
+            # uncertainty_buf.append(uncertainty)
             # print(pred.shape)
             self.original_confidence_lower, self.original_confidence_upper = observed_pred.confidence_region()
         prediction = np.hstack(prediction_buf)
         uncertainty = np.hstack(uncertainty_buf)
 
-        variance_gradients = self.predict_variance_gradients_autograd(points, batch_size=100)
-        miu_gradients, miu_normals = self.predict_gradients_and_normals_autograd(points, batch_size=100)
+        # variance_gradients = self.predict_variance_gradients_autograd(points, batch_size=100)
+        # miu_gradients, miu_normals = self.predict_gradients_and_normals_autograd(points, batch_size=100)
+        variance_gradients = self.predict_variance_gradients_batch(points, batch_size=100)
+        miu_gradients, miu_normals = self.predict_gradients_and_normals_batch(points, batch_size=100)
         # if np.isnan(variance_gradients).any():
         #     print("error nan")
 
         return prediction, uncertainty, variance_gradients, miu_gradients, miu_normals
-
 
 class normal_HE_GPIS_2(normal_HE_GPIS):
     def __init__(self, res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
@@ -1072,6 +1073,7 @@ class normal_HE_GPIS_4(normal_HE_GPIS):
             #     self.model.likelihood.noise.item()
             # ))
             optimizer.step()
+
 
 if __name__ == '__main__':
     grasp_data = np.load("../TEST/contact_points_merged.npy")
