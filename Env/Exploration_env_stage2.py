@@ -432,7 +432,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
         res, display_percentile_low, display_percentile_high, training_iter, grid_count, origin_X,
         origin_y,
         min_data, max_data, show_points=False,
-        store=True, store_path="../Data/Exploration_env_stage2_"
+        store=True, store_path="../Results/Exploration_env_stage2_"
     )
 
     K_p_pos, K_i_pos, K_d_pos = 10.0, 0.0001, 7.0  # pos p i d of  PID

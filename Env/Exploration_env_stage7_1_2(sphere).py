@@ -156,7 +156,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     temp_bb_min = np.array([-0.5, -0.5, -0.5])
     temp_bb_max = np.array([0.5, 0.5, 0.5])
 
-    gpis = init_normal_HE_GPIS_model_2(temp_min, temp_max, temp_bb_min, temp_bb_max, res=100, grid_count=6, store_path="../Data/Exploration_env_stage7_1_3_")
+    gpis = init_normal_HE_GPIS_model_2(temp_min, temp_max, temp_bb_min, temp_bb_max, res=100, grid_count=6, store_path="../Results/Exploration_env_stage7_1_3_")
 
     # init Hand position Controller (local control in isaaclab)
     # K_p_pos, K_i_pos, K_d_pos = 10.0, 0.0001, 7.0  # pos p i d of  PID

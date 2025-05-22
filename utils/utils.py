@@ -368,7 +368,7 @@ def env_step(ee_marker, goal_marker, robot, body_pos_w, body_quat_w, entities, t
 
 
 def init_global_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_low=10, display_percentile_high=90,
-                              training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage3_"):
+                              training_iter=200, grid_count=10, store_path="../Results/Exploration_env_stage3_"):
     origin_X, origin_y, min_data, max_data = generate_init_origin_Xy(temp_min, temp_max, grid_count)
 
     # init gpis model
@@ -383,7 +383,7 @@ def init_global_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_lo
 
 
 def init_normal_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_low=10, display_percentile_high=90,
-                              training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+                              training_iter=200, grid_count=10, store_path="../Results/Exploration_env_stage5_"):
     origin_X, origin_y, min_data, max_data = generate_init_origin_Xy(temp_min, temp_max, grid_count)
 
     # init gpis model
@@ -399,7 +399,7 @@ def init_normal_HE_GPIS_model(temp_min, temp_max, res=100, display_percentile_lo
 
 def init_normal_HE_GPIS_model_2(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
                                 display_percentile_high=90,
-                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+                                training_iter=200, grid_count=10, store_path="../Results/Exploration_env_stage5_"):
     origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
                                                                                            bb_max, grid_count)
 
@@ -415,7 +415,7 @@ def init_normal_HE_GPIS_model_2(temp_min, temp_max, bb_min, bb_max, res=100, dis
 
 def init_normal_HE_GPIS_model_3(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
                                 display_percentile_high=90,
-                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+                                training_iter=200, grid_count=10, store_path="../Results/Exploration_env_stage5_"):
     origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
                                                                                            bb_max, grid_count)
 
@@ -431,7 +431,7 @@ def init_normal_HE_GPIS_model_3(temp_min, temp_max, bb_min, bb_max, res=100, dis
 
 def init_normal_HE_GPIS_model_4(temp_min, temp_max, bb_min, bb_max, res=100, display_percentile_low=10,
                                 display_percentile_high=90,
-                                training_iter=200, grid_count=10, store_path="../Data/Exploration_env_stage5_"):
+                                training_iter=200, grid_count=10, store_path="../Results/Exploration_env_stage5_"):
     origin_X, origin_y, min_data, max_data, bbmin, bbmax = generate_init_origin_Xy_layered(temp_min, temp_max, bb_min,
                                                                                            bb_max, grid_count)
 
