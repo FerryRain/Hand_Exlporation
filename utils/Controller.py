@@ -1,5 +1,5 @@
 """
-@FileName：Pid_Controller.py
+@FileName：Controller.py
 @Description：
 @Author：Ferry
 @Time：2024/12/17 下午5:11
@@ -74,11 +74,17 @@ class Pid_Controller:
         Output:
             - error_q: Error quaternion (batch_size, 4)
         """
-        # Conjugate of the current quaternion
+        # # Conjugate of the current quaternion
+        # current_q_conj = self._quaternion_conjugate_t(current_q)
+        # # Compute the error quaternion
+        # error_q = self._quaternion_multiply_t(target_q, current_q_conj)
+        # return error_q
+        dot = (target_q * current_q).sum(dim=-1, keepdim=True)
+        flip_mask = dot < 0
+        target_q = torch.where(flip_mask, -target_q, target_q)
         current_q_conj = self._quaternion_conjugate_t(current_q)
-        # Compute the error quaternion
-        error_q = self._quaternion_multiply_t(target_q, current_q_conj)
-        return error_q
+
+        return self._quaternion_multiply_t(target_q, current_q_conj)
 
     def _quaternion_to_axis_angle_t(self, q):
         """
@@ -204,3 +210,96 @@ class Pid_Controller:
             return force, torques
         else:
             return force, torques
+
+class HybridForcePositionController(Pid_Controller):
+    def __init__(self, *args, k_f=5.0, K_imp=100.0, D_imp=2.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.k_f = k_f
+        self.K_imp = K_imp
+        self.D_imp = D_imp
+
+    def step_super(self, robot_state):
+        return super().step(robot_state)
+
+    def step(self, robot_state):
+        """
+        Compute the PID forces and torques for position and orientation control.
+        Input:
+            - robot_state: Current robot state (batch_size, 13), where:
+                - First 3 values are the current position.
+                - Next 4 values are the current quaternion.
+                - Next 3 values are the linear velocity.
+                - Last 3 values are the angular velocity.
+        Output:
+            - force: Control forces for position (batch_size, 3).
+            - torques: Control torques for orientation (batch_size, 3).
+        """
+        # Extract target and current states
+        target_position = self.goal[:, :3]
+        target_quaternion = self.goal[:, 3:7]
+
+        current_position = robot_state[:, 0:3]
+        current_quaternion = robot_state[:, 3:7]
+        velocity = robot_state[:, 7:10]
+        angular_velocity = robot_state[:, 10:13]
+
+        # Compute position control
+        self.error_pos = target_position - current_position
+        self.error_integral_pos[:] += self.error_pos * self.dt
+        force = (
+                self.K_p_pos * self.error_pos +
+                self.K_i_pos * self.error_integral_pos -
+                self.K_d_pos * velocity
+        )
+
+        # Compute orientation control
+        axis, angle = self._quaternion_to_axis_angle_t(
+            self._compute_error_quaternion(target_quaternion, current_quaternion)
+        )
+        self.error_rot = angle * axis
+        self.error_integral_rot[:] += self.error_rot * self.dt
+
+        # PID control formula (rotation)
+        torques = (
+                self.K_p_rot * self.error_rot +
+                self.K_i_rot * self.error_integral_rot -
+                self.K_d_rot * angular_velocity
+        )
+
+        return force, torques
+
+    def impedance_force_normal_with_feedback(self, contact_force, normal, pos_error, velocity, f_target):
+        v_n = (velocity * normal).sum(dim=-1, keepdim=True)  # (N, 1)
+        f_n_imp = self.K_imp * pos_error - self.D_imp * v_n
+        f_n_err = self.k_f * (f_target - (contact_force * normal).sum(dim=-1, keepdim=True))
+        return (f_n_imp + f_n_err) * normal
+
+    def compute_tangential_pid_force(self, robot_state, surface_normal):
+        force_pid_world, torque_pid_world = self.step(robot_state)
+        dot_product = torch.sum(force_pid_world * surface_normal, dim=1, keepdim=True)  # (N, 1)
+        f_tangent = force_pid_world - dot_product * surface_normal
+        return f_tangent, torque_pid_world
+
+
+    def step_with_contact(self, robot_state, contact_force, surface_normal, desired_penetration=0.005, f_target=1.5):
+        current_quaternion = robot_state[:, 3:7]
+        f_tangent, torque_pid = self.compute_tangential_pid_force(robot_state, surface_normal)
+
+        current_vel = robot_state[:, 7:10]  # (N, 3)
+        f_normal = self.impedance_force_normal_with_feedback(
+            contact_force=contact_force,
+            normal=surface_normal,
+            pos_error=desired_penetration,
+            velocity=current_vel,
+            f_target=f_target
+        )
+
+        f_total = f_tangent + f_normal
+
+        if self.local_control:
+            force, torques = self.transform_force_torque_to_local_gpu(f_total, torque_pid, current_quaternion)
+            return force, torques
+        else:
+            return f_total, torque_pid
+
+
