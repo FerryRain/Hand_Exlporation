@@ -1,7 +1,7 @@
 # Hand_Exlporation
 
-![Exploration Demo 1](./Data/gif/200step.gif)
-![Exploration Demo 2](./Data/gif/stage6.gif)
+![Exploration Demo 1](Results/gif/200step.gif)
+![Exploration Demo 2](Results/gif/stage6.gif)
 #### This project focuses on **tactile exploration** and **surface reconstruction** using a **dexterous robotic hand**.  
 
 
@@ -9,15 +9,17 @@
 
 ```
 Hand_Exploration/
+├── Results/
 ├── Env/
 │   ├── allegro_hand.py               # Allegro Hand model definitions
 │   ├── Explloration_env.py            # Tactile exploration environment setup (Stage 1)
 │   ├── Exploration_env_stage2.py      # Advanced exploration environment (Stage 2)
-├── TEST/                              # (Some testing files)
+│   ├── ....
 ├── utils/
 │   ├── GPIS.py                        # Basic GPIS modeling
 │   ├── HE_GPIS.py                     # Hand Exploration-specific GPIS extensions
 │   ├── Pid_Controller.py              # PID control for hand pose
+│   ├── ....
 ├── README.md                          
 ```
 
@@ -127,12 +129,12 @@ The project progresses through **nine stages** of tactile exploration and surfac
 
 ---
 
-## Data Organization
+## Results Organization
 
 Experimental data for each stage is stored in the `Data/` directory with folders named accordingly. Some examples:
 
 ```
-Data/
+Results/
 ├── stage6_1/                     # Continuous control (PID) for sphere (radius=0.5) (falied)
 ├── stage6_2/                     # Continuous control (PID) for sphere (radius=0.15)
 ├── stage6_3(CONE)/               # Continuous control (PID) for cone (radius=0.15, height=0.3)
@@ -148,7 +150,7 @@ Data/
 To visualize saved 3D reconstruction results:
 
 ```bash
-cd Data
+cd Results
 python Vis_points.py
 ```
 
