@@ -1,4 +1,7 @@
 # Hand_Exlporation
+
+![Exploration Demo 1](./Data/gif/200step.gif)
+![Exploration Demo 2](./Data/gif/stage6.gif)
 #### This project focuses on **tactile exploration** and **surface reconstruction** using a **dexterous robotic hand**.  
 
 
@@ -80,11 +83,74 @@ Hand_Exploration/
 
    ```bash
    cd Env
-   python Exploration_env_stage2.py
+   python Exploration_env_stage{x}.py
    ```
 
-2. Check the 3D-pointscloud data
-    ```bash
-   cd Data
-   python Vis_points.py
-    ```
+---
+
+## Experiment Stages Overview
+
+The project progresses through **nine stages** of tactile exploration and surface reconstruction:
+
+1. **Stage 1: Teleportation + Contact**
+
+   * The hand is directly teleported to object surface to collect initial contact points.
+
+2. **Stage 2: `move_to` + Uncertainty**
+
+   * The hand moves toward regions of higher surface uncertainty using basic motion primitives.
+
+3. **Stage 3: Surface Constraint + Smoothness**
+
+   * Hand motion is constrained on the object surface.
+   * Guided by both uncertainty gradient and contact smoothness (possibly using δ constraints).
+
+4. **Stage 4: Global Point Sampling as AS Input**
+
+   * Actively samples next exploration targets from global surface uncertainty map.
+
+5. **Stage 5: Position Control Version**
+
+   * Replaces high-level `move_to` with low-level position control for trajectory execution.
+
+6. **Stage 6: Continuous PID Control**
+
+   * Employs PID-based continuous control to smoothly follow desired paths along surface.
+
+7. **Stage 7: New GPIS Initialization Function**
+
+   * Improves initialization of the GPIS model with different spatial priors (e.g. spherical or conic).
+
+8. **Stage 8: Hybrid Force-Position Control**
+
+   * Combines force feedback with position control to ensure compliant, stable contact.
+
+---
+
+## Data Organization
+
+Experimental data for each stage is stored in the `Data/` directory with folders named accordingly. Some examples:
+
+```
+Data/
+├── stage6_1/                     # Continuous control (PID) for sphere (radius=0.5) (falied)
+├── stage6_2/                     # Continuous control (PID) for sphere (radius=0.15)
+├── stage6_3(CONE)/               # Continuous control (PID) for cone (radius=0.15, height=0.3)
+├── stage7_1_1(sphere)/           # Stage 7 for GPIS which initialized by double bb for sphere (radius=0.15)
+├── stage7_1_2/                   # Stage 7 for GPIS which initialized by double bb for sphere (radius=0.5) (success)
+├── stage7_2_1/                   # Stage 7 for GPIS which initialized by double bb for cone (radius=0.15, height=0.3)
+├── stage7_2_2/                   # Stage 7 for GPIS which initialized by double bb for cone (radius=0.15, height=0.3) with another type of the gaussian data preprocess 
+├── stage8_1/                     # Stage 8 experiment with hybrid control for sphere
+├── stage8_2_1/                   # Stage 8 experiment with hybrid control for cone
+
+```
+
+To visualize saved 3D reconstruction results:
+
+```bash
+cd Data
+python Vis_points.py
+```
+
+---
+
