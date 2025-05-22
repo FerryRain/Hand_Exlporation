@@ -1,15 +1,15 @@
 """
-@FileName：Exploration_env_stage6.py
+@FileName：Exploration_env_stage8_2.py.py
 @Description：
 @Author：Ferry
-@Time：2025 5/12/25 9:02 PM
+@Time：2025 5/20/25 4:52 PM
 @Copyright：©2024-2025 ShanghaiTech University-RIMLAB
 """
 
 import argparse
 
 from isaaclab.app import AppLauncher
-from utils.Pid_Controller import Pid_Controller
+from utils.Controller import HybridForcePositionController
 from utils.utils import *
 
 # add argparse arguments
@@ -37,6 +37,7 @@ from collections import deque
 
 
 @configclass
+@configclass
 class ExpllorationEnvCfg(InteractiveSceneCfg):
     dome_light = AssetBaseCfg(
         prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
@@ -58,8 +59,9 @@ class ExpllorationEnvCfg(InteractiveSceneCfg):
     )
     object = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/object",
-        spawn=sim_utils.SphereCfg(
+        spawn=sim_utils.ConeCfg(
             radius=0.15,
+            height=0.3,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=False, disable_gravity=True,
                                                          max_linear_velocity=.0, max_angular_velocity=.0),
             mass_props=sim_utils.MassPropertiesCfg(mass=10000),
@@ -88,40 +90,73 @@ class ExpllorationEnvCfg(InteractiveSceneCfg):
 """
 
 
-def move_to_base(robot, controller, pos, quat):
-    force, torques = controller.step(robot.data.object_state_w.reshape(-1, 13))
+def base_move(robot, controller):
+    force, torques = controller.step_super(robot.data.object_state_w.reshape(-1, 13))
     robot.set_external_force_and_torque(forces=force.reshape(-1, 1, 3).to("cuda:0"),
                                         torques=torques.reshape(-1, 1, 3).to("cuda:0"),
                                         object_ids=[0])
 
 
-def move_to(robot, controller, quat, gpis, hand_pos_now, entities, contact_force, alpha_base=0.03, beta_base=0.05):
+def move_to_base(robot, controller, contact_force, hand_pos_now, gpis, desired_penetration=0.005, f_target=2.5):
     if contact_detect(contact_force):
-        alpha = alpha_base / 2
+        f_target = f_target / 1
+    else:
+        f_target = f_target * 2
+    prediction, uncertainty, variance_gradients, miu_gradients, miu_normals = gpis.predict_points(
+        hand_pos_now.reshape(-1, 3))
+    d_Normal = -(miu_normals / (np.linalg.norm(miu_normals) + 1e-10))
+    robot_state = robot.data.object_state_w.reshape(-1, 13)
+    contact_force_tensor = contact_force.clone().detach().reshape(-1, 3)
+    surface_normal = torch.tensor(d_Normal, dtype=torch.float32, device='cuda').reshape(-1, 3)
+
+    force, torques = controller.step_with_contact(
+        robot_state,
+        contact_force_tensor,
+        surface_normal,
+        desired_penetration=desired_penetration,
+        f_target=f_target
+    )
+    robot.set_external_force_and_torque(forces=force.reshape(-1, 1, 3).to("cuda:0"),
+                                        torques=torques.reshape(-1, 1, 3).to("cuda:0"),
+                                        object_ids=[0])
+
+
+def move_to_new(robot, controller, quat, gpis, hand_pos_now, entities, contact_force, beta_base=0.08,
+                desired_penetration=0.005, f_target=2.5):
+    if contact_detect(contact_force):
+        f_target = f_target / 1
         beta = beta_base
     else:
-        alpha = alpha_base * 2
+        f_target = f_target * 2
         beta = beta_base
     prediction, uncertainty, variance_gradients, miu_gradients, miu_normals = gpis.predict_points(
         hand_pos_now.reshape(-1, 3))
     d_Normal = -(miu_normals / (np.linalg.norm(miu_normals) + 1e-10))
-    # d_Normal = -(g_v[idx_nearest_f] / (np.linalg.norm(g_v[idx_nearest_f]) + 1e-8))
-    # d_Tagent = compute_projected_unit_direction_np(g_v[idx_nearest_f], n_miu[idx_nearest_f])
     d_Tagent = compute_projected_unit_direction_np(variance_gradients, miu_normals)
-    delty_x_Normal = alpha * d_Normal
     delty_y_Tagent = beta * d_Tagent
 
-    pos_target = hand_pos_now + delty_x_Normal + delty_y_Tagent
+    pos_target_PID = hand_pos_now + delty_y_Tagent
 
-    pos_target = torch.tensor(pos_target, dtype=torch.float32, device='cuda').reshape(-1, 3)
-    target_pos = pos_target + entities.env_origins[0]
-    quat = check_quat_validity(quat)
-    controller.reset(torch.cat((target_pos, quat), dim=-1).reshape(-1, 7), [0])
-    force, torques = controller.step(robot.data.object_state_w.reshape(-1, 13))
+    pos_target_PID = torch.tensor(pos_target_PID, dtype=torch.float32, device='cuda').reshape(-1, 3)
+    target_pos_PID = pos_target_PID + entities.env_origins[0]
+    target_quat = check_quat_validity(quat)
+    controller.reset(torch.cat((target_pos_PID, target_quat), dim=-1).reshape(-1, 7), [0])
+
+    robot_state = robot.data.object_state_w.reshape(-1, 13)
+    contact_force_tensor = contact_force.clone().detach().reshape(-1, 3)
+    surface_normal = torch.tensor(d_Normal, dtype=torch.float32, device='cuda').reshape(-1, 3)
+
+    force, torques = controller.step_with_contact(
+        robot_state,
+        contact_force_tensor,
+        surface_normal,
+        desired_penetration=desired_penetration,
+        f_target=f_target
+    )
     robot.set_external_force_and_torque(forces=force.reshape(-1, 1, 3).to("cuda:0"),
                                         torques=torques.reshape(-1, 1, 3).to("cuda:0"),
                                         object_ids=[0])
-    return target_pos
+    return target_pos_PID
 
 
 def run_simulator(sim: sim_utils.SimulationContext, entities):
@@ -139,7 +174,7 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
 
     # Init Robot state
     robot = entities['robot']
-    pos = torch.tensor([0, 0.2, 0.0], device="cuda")
+    pos = torch.tensor([0, 0.05, 0.1], device="cuda")
     quat = torch.tensor((0.257551, 0.283045, 0.683330, -0.621782), device="cuda")
     target_pos, target_quat = pos.reshape(-1, 3) + entities.env_origins[0], quat.reshape(-1, 4)
 
@@ -151,25 +186,30 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
     # init global_HE_GPIS model
     temp_min = np.array([-0.2, -0.2, -0.2])
     temp_max = np.array([0.2, 0.2, 0.2])
-    gpis = init_normal_HE_GPIS_model(temp_min, temp_max, res=100, grid_count=4, store_path="../Data/Exploration_env_stage6_")
-    # gpis = init_global_HE_GPIS_model(temp_min, temp_max, grid_count=5, store_path="../Data/Exploration_env_stage5_")
+    temp_bb_min = np.array([-0.15, -0.15, -0.15])
+    temp_bb_max = np.array([0.15, 0.15, 0.15])
+
+    gpis = init_normal_HE_GPIS_model_3(temp_min, temp_max, temp_bb_min, temp_bb_max, res=100, grid_count=6,
+                                       store_path="../Data/Exploration_env_stage8_2_2_")
 
     # init Hand position Controller (local control in isaaclab)
     # K_p_pos, K_i_pos, K_d_pos = 10.0, 0.0001, 7.0  # pos p i d of  PID
     # K_p_rot, K_i_rot, K_d_rot = 0.5, 0.025, 0.65  # rot p i d of  PID
     K_p_pos, K_i_pos, K_d_pos = 1.25, 0.00001, 1.4  # pos p i d of  PID
     K_p_rot, K_i_rot, K_d_rot = 0.1, 0.0, 0.1  # rot p i d of  PID
+    k_f, K_imp, D_imp= 1.0, 4.0, 2.0
+    # k_f, K_imp, D_imp = 0, 0, 0
     dt = 0.01
-    controller = Pid_Controller(K_p_pos, K_i_pos, K_d_pos, K_p_rot, K_i_rot, K_d_rot, 1, dt, local_control=True)
+    controller = HybridForcePositionController(K_p_pos, K_i_pos, K_d_pos, K_p_rot, K_i_rot, K_d_rot, 1, dt, k_f=k_f,
+                                               K_imp=K_imp, D_imp=D_imp, local_control=True)
     controller.reset(torch.cat((target_pos, target_quat), dim=-1).reshape(-1, 7), [0])
+    Hybrid_control = False
 
     estimated_surface = []
     # Simulate physics
     while simulation_app.is_running():
 
         if get_exploration_status(count):  # time to next exploration
-        # if count == 600:
-            # update explored queue
             explored_queue.append(robot.data.object_pos_w[:, 0, :].reshape(-1, 3).to("cpu"))
 
             # update buffer
@@ -192,12 +232,20 @@ def run_simulator(sim: sim_utils.SimulationContext, entities):
             touched_buf = torch.empty((0, 3), device="cuda")
             untouched_buf = torch.empty((0, 3), device="cuda")
 
-        if len(estimated_surface) > 0 and count % 50 == 0:
-            target_pos = move_to(robot, controller, target_quat, gpis,
-                                 robot.data.object_pos_w[:, 0, :].reshape(-1, 3).to("cpu").numpy(),
-                                 entities, entities["sensor"].data.force_matrix_w)
-        else:
-            move_to_base(robot, controller, target_pos, target_quat)
+            if len(estimated_surface) > 0:
+                Hybrid_control = True
+
+        if not Hybrid_control:
+            base_move(robot, controller)
+
+        if Hybrid_control and count % 50 == 0:
+            target_pos = move_to_new(robot, controller, target_quat, gpis,
+                                     robot.data.object_pos_w[:, 0, :].reshape(-1, 3).to("cpu").numpy(),
+                                     entities, entities["sensor"].data.force_matrix_w)
+        elif Hybrid_control:
+            # move_to_base(robot, controller, entities["sensor"].data.force_matrix_w,
+            #              robot.data.object_pos_w[:, 0, :].reshape(-1, 3).to("cpu").numpy(), gpis)
+            base_move(robot, controller)
 
         if count % 5 == 0:
             touched_buf, untouched_buf = store_contact_points_sphere(robot, entities, touched_buf,

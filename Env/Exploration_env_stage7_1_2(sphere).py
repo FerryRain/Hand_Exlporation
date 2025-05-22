@@ -11,7 +11,7 @@
 import argparse
 
 from isaaclab.app import AppLauncher
-from utils.Pid_Controller import Pid_Controller
+from utils.Controller import Pid_Controller
 from utils.utils import *
 
 # add argparse arguments

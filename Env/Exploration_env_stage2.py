@@ -9,7 +9,7 @@ import argparse
 
 from isaaclab.app import AppLauncher
 from utils.HE_GPIS import global_HE_GPIS
-from utils.Pid_Controller import Pid_Controller
+from utils.Controller import Pid_Controller
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="This script demonstrates different dexterous hands.")
