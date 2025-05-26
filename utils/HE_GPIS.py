@@ -556,6 +556,7 @@ class normal_HE_GPIS(global_HE_GPIS):
                  origin_y, min_data, max_data, show_points=show_points, store=store, store_path=store_path)
 
         self.variance_gradients_s, self.miu_gradients_s, self.miu_normals_s = None, None, None
+        self.miu_gradients, self.miu_normals, self.variance_gradients = None, None, None
 
     def predict_gradients_and_normals_batch(self, query_points, batch_size=10000):
         """
@@ -812,18 +813,18 @@ class normal_HE_GPIS(global_HE_GPIS):
             draw_points = self.estimated_surface[indices]
 
             # self.variance_gradients_s = self.predict_variance_gradients_batch(self.estimated_surface, batch_size=100)
-            self.variance_gradients_s = self.predict_variance_gradients_batch(self.estimated_surface, batch_size=100)
-            self.miu_gradients_s, self.miu_normals_s = self.predict_gradients_and_normals_batch(self.estimated_surface,
-                                                                                            batch_size=100)
+            # self.variance_gradients_s = self.predict_variance_gradients_batch(self.estimated_surface, batch_size=100)
+            # self.miu_gradients_s, self.miu_normals_s = self.predict_gradients_and_normals_batch(self.estimated_surface,
+            #                                                                                 batch_size=100)
 
             if self.show_points:
                 self.draw_pointcloud(draw_points)
 
         # self.variance_gradients = self.predict_variance_gradients_batch(self.xstar[self.selected_indices], batch_size=100)
-        self.variance_gradients = self.predict_variance_gradients_batch(self.xstar[self.selected_indices], batch_size=100)
-
-        self.miu_gradients, self.miu_normals = self.predict_gradients_and_normals_batch(self.xstar[
-            self.selected_indices], batch_size=100)
+        # self.variance_gradients = self.predict_variance_gradients_batch(self.xstar[self.selected_indices], batch_size=100)
+        #
+        # self.miu_gradients, self.miu_normals = self.predict_gradients_and_normals_batch(self.xstar[
+        #     self.selected_indices], batch_size=100)
 
         self.time_step += 1
         if self.time_step % self.store_stem == 0 and self.store and len(

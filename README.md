@@ -144,7 +144,6 @@ Results/
 ├── stage7_2_2/                   # Stage 7 for GPIS which initialized by double bb for cone (radius=0.15, height=0.3) with another type of the gaussian data preprocess 
 ├── stage8_1/                     # Stage 8 experiment with hybrid control for sphere
 ├── stage8_2_1/                   # Stage 8 experiment with hybrid control for cone
-
 ```
 
 To visualize saved 3D reconstruction results:

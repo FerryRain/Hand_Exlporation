@@ -30,7 +30,7 @@ from isaaclab.assets import Articulation, ArticulationCfg, RigidObjectCfg, Rigid
 from isaaclab.markers import VisualizationMarkers, FRAME_MARKER_CFG
 from isaaclab_assets import ALLEGRO_HAND_CFG
 
-from Pid_Controller import Pid_Controller
+from ..utils.Controller import Pid_Controller
 
 
 def define_origins(num_origins: int, spacing: float) -> list[list[float]]:

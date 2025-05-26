@@ -338,6 +338,34 @@ def compute_projected_unit_direction_np(grad, normal):
     return d_i.reshape(-1, 3)
 
 
+def quat_align_z_to_vector(v_target: torch.Tensor) -> torch.Tensor:
+    """
+    Compute quaternions that rotate local z-axis [0, 0, 1] to v_target direction in world frame.
+
+    Args:
+        v_target (torch.Tensor): (N, 3) unit vectors in world frame
+
+    Returns:
+        q_target (torch.Tensor): (N, 4) quaternions in format [w, x, y, z]
+    """
+    batch = v_target.shape[0]
+    z_axis = torch.tensor([0., 0., 1.], device=v_target.device).expand(batch, 3)
+    v_target = v_target / (torch.norm(v_target, dim=1, keepdim=True) + 1e-8)
+
+    cross = torch.cross(z_axis, v_target, dim=1)
+    dot = (z_axis * v_target).sum(dim=1, keepdim=True)
+
+    norm_cross = torch.norm(cross, dim=1, keepdim=True)
+    angle = torch.atan2(norm_cross, dot)
+
+    axis = cross / (norm_cross + 1e-8)  # normalize rotation axis
+    half_angle = angle / 2.0
+    sin_half = torch.sin(half_angle)
+    cos_half = torch.cos(half_angle)
+
+    q_target = torch.cat([cos_half, axis * sin_half], dim=1)  # [w, x, y, z]
+    return q_target
+
 """
 -------------------------------
 # Setup Env state
