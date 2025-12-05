@@ -1,9 +1,12 @@
-# Hand_Exlporation
+# Hand_Exploration
 
 ![Exploration Demo 1](Results/gif/200step.gif)
 ![Exploration Demo 2](Results/gif/stage6.gif)
-#### This project focuses on **tactile exploration** and **surface reconstruction** using a **dexterous robotic hand**.  
 
+This repository provides a **single-GPIS Isaac Lab testbed** for our paper  
+**“Autonomous Exploration for Shape Reconstruction and Measurement via Informative Contact-Guided Planning (AMMH)”**.
+
+It implements a simplified version of the AMMH framework in simulation, focusing on **tactile exploration** and **surface reconstruction** with a **simple contact points**, and is mainly intended for testing and debugging the GPIS-based exploration pipeline.
 
 ## Project Structure
 
