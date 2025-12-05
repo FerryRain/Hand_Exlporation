@@ -4,7 +4,7 @@
 ![Exploration Demo 2](Results/gif/stage6.gif)
 
 This repository provides a **single-GPIS Isaac Lab testbed** for our paper  
-**“Autonomous Exploration for Shape Reconstruction and Measurement via Informative Contact-Guided Planning (AMMH)”**.
+**“Autonomous Exploration for Shape Reconstruction and Measurement via Informative Contact-Guided Planning (AESRM)”**.
 
 It implements a simplified version of the AMMH framework in simulation, focusing on **tactile exploration** and **surface reconstruction** with a **simple contact points**, and is mainly intended for testing and debugging the GPIS-based exploration pipeline.
 
