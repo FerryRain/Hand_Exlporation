@@ -1,4 +1,4 @@
-# Hand_Exploration
+# Probe_Exploration
 
 ![Exploration Demo 1](Results/gif/200step.gif)
 ![Exploration Demo 2](Results/gif/stage6.gif)
